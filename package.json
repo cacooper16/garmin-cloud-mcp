@@ -1,0 +1,50 @@
+{
+	"name": "garmin-cloud-mcp",
+	"version": "1.0.0",
+	"description": "Remote MCP server on Cloudflare Workers that gives Claude, ChatGPT or any MCP client read-only access to your Garmin Connect data via Garmin's official Personal API, behind GitHub sign-in.",
+	"license": "MIT",
+	"private": true,
+	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/cacooper16/garmin-cloud-mcp.git"
+	},
+	"keywords": [
+		"mcp",
+		"model-context-protocol",
+		"mcp-server",
+		"claude",
+		"chatgpt",
+		"garmin",
+		"garmin-connect",
+		"cloudflare-workers",
+		"fitness",
+		"health"
+	],
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"dev": "wrangler dev",
+		"check": "npm run types && tsc --noEmit && npm test && npm run test:e2e",
+		"deploy": "npm run check && wrangler deploy",
+		"tail": "wrangler tail",
+		"types": "wrangler types --config wrangler.example.jsonc",
+		"type-check": "npm run types && tsc --noEmit",
+		"test": "node --experimental-strip-types --test test/*.test.ts",
+		"test:e2e": "wrangler deploy --dry-run --config wrangler.example.jsonc --outdir .wrangler/e2e-dist && node test/e2e.mjs"
+	},
+	"dependencies": {
+		"@cloudflare/workers-oauth-provider": "^1.2.4",
+		"@modelcontextprotocol/server": "2.3.1",
+		"agents": "^0.29.0",
+		"hono": "^4.12.27",
+		"zod": "^4.4.3"
+	},
+	"devDependencies": {
+		"@types/node": "^24.0.0",
+		"miniflare": "^4.20260730.0",
+		"typescript": "6.0.3",
+		"wrangler": "^4.105.0"
+	}
+}

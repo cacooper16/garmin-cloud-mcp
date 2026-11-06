@@ -1,0 +1,47 @@
+// Copy this file to wrangler.jsonc (which is git-ignored) and fill in the three
+// values marked FILL IN. See the README's setup steps.
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "garmin-cloud-mcp",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-11-01",
+	// global_fetch_strictly_public: the Worker can't fetch private/internal
+	// addresses (SSRF hardening) and it enables Client ID Metadata Documents,
+	// the newer way MCP clients register.
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public",
+	],
+	"vars": {
+		// FILL IN: the public URL your MCP client connects to. Every OAuth token is bound to it.
+		// https://garmin-cloud-mcp.<your-subdomain>.workers.dev/mcp
+		"MCP_RESOURCE": "https://garmin-cloud-mcp.YOUR-SUBDOMAIN.workers.dev/mcp",
+		// FILL IN: your numeric GitHub user ID (not your username: usernames can be
+		// renamed and re-registered). Find it at https://api.github.com/users/<username>
+		// "0" lets nobody in.
+		"ALLOWED_GITHUB_USER_ID": "0",
+	},
+	"kv_namespaces": [
+		{
+			// Holds OAuth grants/tokens, the cached Garmin bearer token and
+			// cached past-date responses.
+			"binding": "OAUTH_KV",
+			// FILL IN: the id printed by `npx wrangler kv namespace create OAUTH_KV`
+			"id": "YOUR_KV_NAMESPACE_ID",
+		},
+	],
+	"observability": {
+		"enabled": true,
+	},
+	"dev": {
+		"port": 8788,
+	},
+	"secrets": {
+		"required": [
+			"GITHUB_CLIENT_ID",
+			"GITHUB_CLIENT_SECRET",
+			"COOKIE_ENCRYPTION_KEY",
+			"GARMIN_API_KEY",
+		],
+	},
+}
