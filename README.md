@@ -44,7 +44,9 @@ Ask things like:
 Here it is in Claude on a phone (cloud version), projecting a 10k time from
 recent runs:
 
-https://github.com/user-attachments/assets/fafd6a48-e899-4d80-bbbe-f5c780e7bc93
+<p align="center">
+  <img src="https://raw.githubusercontent.com/cacooper16/garmin-cloud-mcp/main/docs/demo.gif" width="320" alt="Claude on a phone answering 'how quickly could I run a 10k in April?' from Garmin running data">
+</p>
 
 > Not affiliated with or endorsed by Garmin. "Garmin" and "Garmin Connect" are
 > trademarks of Garmin Ltd. or its subsidiaries.
