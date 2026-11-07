@@ -67,37 +67,64 @@ recent runs:
 | Free to run                                  |  ✅   |  ✅   |
 | All 25 tools and 5 prompts                   |  ✅   |  ✅   |
 
-**I use Claude Desktop or Claude Code on one computer.**
+### Still deciding?
+
+<details>
+<summary><b>I use Claude Desktop or Claude Code on one computer</b></summary>
+
 Go local. You get everything, in two minutes.
 
-**I want to ask from my phone, say right after a run.**
+</details>
+<details>
+<summary><b>I want to ask from my phone, say right after a run</b></summary>
+
 Go cloud. Phone apps can't start a local process, so they need a server they
 can reach over the internet.
 
-**I use ChatGPT.**
+</details>
+<details>
+<summary><b>I use ChatGPT</b></summary>
+
 Go cloud. ChatGPT connects to remote MCP servers only.
 
-**I use more than one computer.**
+</details>
+<details>
+<summary><b>I use more than one computer</b></summary>
+
 Go cloud. Local means installing it on each computer; cloud means setting it up
 once and adding the URL to each app.
 
-**I'm not sure yet.**
+</details>
+<details>
+<summary><b>I'm not sure yet</b></summary>
+
 Start local. If you later want it on your phone, set up cloud. There's nothing
 to migrate, because your data stays in Garmin.
 
-**Can I run both?**
+</details>
+<details>
+<summary><b>Can I run both?</b></summary>
+
 Yes. They can share a Garmin key.
 
-**Which is more secure?**
+</details>
+<details>
+<summary><b>Which is more secure?</b></summary>
+
 Both are locked down, in different ways. Local has no sign-in because there's
 nothing to sign in to: only the app that started it can talk to it, and your
 key sits in that app's config on your computer. Cloud is reachable from the
 internet, so it's locked to your GitHub account, and your key sits in
 Cloudflare secrets. See [Security model](#security-model).
 
-**How comfortable with a terminal do I need to be?**
+</details>
+<details>
+<summary><b>How comfortable with a terminal do I need to be?</b></summary>
+
 Local: you paste three commands and one config snippet. Cloud: about a dozen
 commands, plus a few settings in the Cloudflare and GitHub dashboards.
+
+</details>
 
 ## Running locally
 
