@@ -1,7 +1,7 @@
 {
 	"name": "garmin-cloud-mcp",
 	"version": "1.0.0",
-	"description": "Remote MCP server on Cloudflare Workers that gives Claude, ChatGPT or any MCP client read-only access to your Garmin Connect data via Garmin's official Personal API, behind GitHub sign-in.",
+	"description": "MCP server for Garmin's official Personal API. Run it locally in two minutes with just your Garmin key, or self-host it on Cloudflare behind GitHub OAuth to use it on web, desktop and phone. Read-only. Works with Claude, ChatGPT, Cursor and other MCP clients.",
 	"license": "MIT",
 	"private": true,
 	"type": "module",

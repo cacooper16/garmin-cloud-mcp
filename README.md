@@ -44,7 +44,7 @@ Ask things like:
 Here it is in Claude on a phone (cloud version), projecting a 10k time from
 recent runs:
 
-VIDEO_URL
+https://github.com/user-attachments/assets/fafd6a48-e899-4d80-bbbe-f5c780e7bc93
 
 > Not affiliated with or endorsed by Garmin. "Garmin" and "Garmin Connect" are
 > trademarks of Garmin Ltd. or its subsidiaries.
