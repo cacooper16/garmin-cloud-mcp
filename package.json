@@ -29,6 +29,7 @@
 		"check": "npm run types && tsc --noEmit && npm test && npm run test:e2e",
 		"deploy": "npm run check && wrangler deploy",
 		"tail": "wrangler tail",
+		"stdio": "node --experimental-strip-types --no-warnings src/stdio.ts",
 		"types": "wrangler types --config wrangler.example.jsonc",
 		"type-check": "npm run types && tsc --noEmit",
 		"test": "node --experimental-strip-types --test test/*.test.ts",

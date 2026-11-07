@@ -75,7 +75,7 @@ export class GarminClient {
 		const key = opts.apiKey?.trim();
 		if (!key) {
 			throw new GarminApiError(
-				"GARMIN_API_KEY is not set. Run: npx wrangler secret put GARMIN_API_KEY",
+				"GARMIN_API_KEY is not set. Cloud: run npx wrangler secret put GARMIN_API_KEY. Local: set it in your MCP client's config.",
 			);
 		}
 		this.apiKey = key;
@@ -239,7 +239,7 @@ export class GarminClient {
 				throw new GarminApiError(
 					"Garmin rejected the Personal API key (it may have expired or been deleted). " +
 						"Create a new key at https://connect.garmin.com/app/settings/personalApiToken " +
-						"then run: npx wrangler secret put GARMIN_API_KEY",
+						"then update GARMIN_API_KEY. Cloud: run npx wrangler secret put GARMIN_API_KEY. Local: change it in your MCP client's config.",
 					res.status,
 				);
 			}

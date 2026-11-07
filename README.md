@@ -25,6 +25,11 @@ Compared with a local MCP server or a third-party service, you get:
 - **No extra cost.** Cloudflare's free plan covers the hosting, and it uses the
   AI subscription you already have.
 
+Only use one computer, or want to try it first? It also runs as a local
+process in Claude Code, Claude Desktop, Cursor or VS Code, with no Cloudflare
+or GitHub setup. It takes about two minutes and needs just your Garmin key.
+See [Running locally](#running-locally).
+
 Ask things like:
 
 - *"Am I ready to train hard today?"*
@@ -96,7 +101,21 @@ Each person deploys their own copy to their own Cloudflare account. It's
 locked to a single GitHub account, so your Garmin data is only ever reachable
 by you.
 
-## Setup
+## Two ways to run it
+
+| | Cloud (recommended) | Local |
+|---|---|---|
+| Works on | Every device: web, desktop, phone | Desktop apps on one computer |
+| Computer needs to be on | No | Yes |
+| Setup | About 20 minutes: Cloudflare, GitHub OAuth app, four secrets | About 2 minutes: one Garmin key |
+| Sign-in | GitHub OAuth, locked to your account | None needed; nothing listens on the network |
+| Garmin key stored in | Cloudflare secrets | Your MCP client's config on that computer |
+| Caching | Kept between sessions | Lasts only while the process runs |
+
+Start local to try it, and move to cloud when you want it on your phone. The
+tools are identical.
+
+## Cloud setup
 
 ### What you need
 
@@ -201,6 +220,64 @@ Every client opens a GitHub sign-in the first time; sign in and approve.
 Try *"Am I ready to train today?"*. In clients that show MCP prompts, such
 as Claude's connector menu, you can also pick a ready-made prompt.
 
+## Running locally
+
+The same server runs as a local process that your AI app starts and talks to
+directly. There's no Cloudflare or GitHub setup.
+
+### What you need
+
+- Node 22 or newer
+- A Garmin Personal API key (see
+  [Create a Garmin Personal API key](#6-create-a-garmin-personal-api-key))
+
+### Install
+
+```sh
+git clone https://github.com/cacooper16/garmin-cloud-mcp.git
+cd garmin-cloud-mcp
+npm ci --omit=dev
+```
+
+### Connect your AI client
+
+**Claude Code** (run from the repo folder):
+
+```sh
+claude mcp add garmin --env GARMIN_API_KEY=<your key> -- node --experimental-strip-types --no-warnings "$(pwd)/src/stdio.ts"
+```
+
+**Claude Desktop, Cursor, VS Code and other clients:** add this to the
+client's MCP config, using the full path to your copy of the repo:
+
+```json
+{
+  "mcpServers": {
+    "garmin": {
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "--no-warnings",
+        "/absolute/path/to/garmin-cloud-mcp/src/stdio.ts"
+      ],
+      "env": {
+        "GARMIN_API_KEY": "<your key>"
+      }
+    }
+  }
+}
+```
+
+VS Code's `mcp.json` uses `"servers"` instead of `"mcpServers"`.
+
+Then try *"Am I ready to train today?"*.
+
+**Security.** There's no sign-in because the process has no network listener:
+only the app that started it can talk to it. Never wrap it in an HTTP proxy or
+expose it on a network. For remote access, use the cloud version.
+
+**Updating.** `git pull && npm ci --omit=dev`, then restart your AI app.
+
 ## Tools
 
 All tools are read-only. Ranges can be up to 92 days (366 for the
@@ -303,6 +380,7 @@ npm test           # unit tests
 npm run test:e2e   # the real Worker in Miniflare, full OAuth + MCP flow, GitHub and Garmin faked
 npm run check      # type-check + both of the above; runs before every deploy and in CI
 npm run dev        # local server on :8788 (needs .dev.vars, see .dev.vars.example)
+npm run stdio      # the local stdio server (needs GARMIN_API_KEY in the environment)
 ```
 
 The tests and type-check use `wrangler.example.jsonc`, so they run without a
@@ -318,8 +396,8 @@ the deployed Worker. `npm audit --omit=dev` is clean.
 
 ## Known limits
 
-- **One user per deployment.** To share with family, each person deploys their
-  own copy with their own Garmin key.
+- **One Garmin account per cloud deployment or local install.** To share with
+  family, each person sets up their own copy with their own Garmin key.
 - **Personal API coverage only.** No golf, training plans, Garmin Training
   Status, race predictions, VO2 max history, personal records, gear, courses,
   badges, social, or writes.
