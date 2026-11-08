@@ -560,6 +560,34 @@ try {
 		assert.equal(garminCalls.length, before, "served from the cache filled by compare_activities");
 	});
 
+	await step("search_activities passes name, duration, elevation and area filters in Garmin's units", async () => {
+		const before = garminCalls.length;
+		const { json } = await mcp(
+			accessToken,
+			"tools/call",
+			{
+				name: "search_activities",
+				arguments: {
+					name_contains: "park run",
+					min_duration_min: 20,
+					max_elevation_gain_m: 50,
+					exclude_children: true,
+					area: { north: 51.6, south: 51.4, west: -0.3, east: 0.1 },
+					limit: 5,
+				},
+			},
+			session,
+		);
+		assert.ok(!json.result.isError, json.result.content?.[0]?.text);
+		const call = new URL(`http://x${garminCalls.slice(before).find((c) => c.includes("search/activities"))}`);
+		const p = Object.fromEntries(call.searchParams);
+		assert.equal(p.search, "park run");
+		assert.equal(p.minDuration, "1200");
+		assert.equal(p.maxElevation, "50");
+		assert.equal(p.excludeChildren, "true");
+		assert.deepEqual([p.upperLatitude, p.lowerLatitude, p.leftLongitude, p.rightLongitude], ["51.6", "51.4", "-0.3", "0.1"]);
+	});
+
 	await step("get_activity_analysis unzips and decodes the FIT file in the Worker, then caches the result", async () => {
 		const call = () =>
 			mcp(accessToken, "tools/call", { name: "get_activity_analysis", arguments: { activity_id: "77" } }, session);

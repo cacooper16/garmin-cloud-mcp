@@ -371,7 +371,7 @@ on its own means "since then": the range ends today.
 | `get_heart_rate`                                                                     | One day, as hourly min/avg/max                                                                       |
 | `get_spo2`, `get_fitness_age`                                                        | Single-day detail                                                                                    |
 | `get_weight`, `get_weight_goals`, `get_hydration`, `get_wellness_activity_summaries` | Ranges                                                                                               |
-| `search_activities`                                                                  | Individual activities, filterable by type, subtype, race and distance, sortable by distance or speed |
+| `search_activities`                                                                  | Individual activities, filterable by type, subtype, race, distance, duration, elevation gain, name and area, sortable by distance or speed |
 | `get_activity`, `get_activity_workouts`                                              | One activity in detail                                                                               |
 | `get_nutrition`, `get_menstrual_cycle`                                               | Single-day detail                                                                                    |
 | `get_profile`                                                                        | Units, time zone and heart-rate zones                                                                |

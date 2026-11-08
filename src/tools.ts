@@ -565,6 +565,24 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 			.describe("Only activities tagged with this event type, e.g. race."),
 		min_distance_m: z.number().int().min(0).optional().describe("Minimum distance in metres."),
 		max_distance_m: z.number().int().min(0).optional().describe("Maximum distance in metres."),
+		name_contains: z.string().trim().min(1).max(100).optional().describe("Text the activity name contains (case-insensitive), e.g. 'parkrun' or 'tempo'."),
+		min_duration_min: z.number().min(0).optional().describe("Minimum duration in minutes."),
+		max_duration_min: z.number().min(0).optional().describe("Maximum duration in minutes."),
+		min_elevation_gain_m: z.number().min(0).optional().describe("Minimum elevation gain in metres."),
+		max_elevation_gain_m: z.number().min(0).optional().describe("Maximum elevation gain in metres."),
+		exclude_children: z
+			.boolean()
+			.optional()
+			.describe("Hide the legs of multisport activities (e.g. a triathlon's swim/bike/run), keeping the parent."),
+		area: z
+			.object({
+				north: z.number().min(-90).max(90),
+				south: z.number().min(-90).max(90),
+				west: z.number().min(-180).max(180),
+				east: z.number().min(-180).max(180),
+			})
+			.optional()
+			.describe("Only activities that started inside this latitude/longitude box (decimal degrees)."),
 	};
 	type Filters = {
 		period?: Period;
@@ -575,7 +593,15 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 		event_type?: string;
 		min_distance_m?: number;
 		max_distance_m?: number;
+		name_contains?: string;
+		min_duration_min?: number;
+		max_duration_min?: number;
+		min_elevation_gain_m?: number;
+		max_elevation_gain_m?: number;
+		exclude_children?: boolean;
+		area?: { north: number; south: number; west: number; east: number };
 	};
+	const secs = (min: number | undefined) => (min === undefined ? undefined : Math.round(min * 60));
 	const filterParams = (f: Filters) => ({
 		startDate: f.start_date,
 		endDate: f.end_date,
@@ -584,6 +610,18 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 		eventType: f.event_type,
 		minDistance: f.min_distance_m,
 		maxDistance: f.max_distance_m,
+		// Verified against the live API: search matches the name, durations are
+		// seconds, min/maxElevation filter on elevation gain in metres.
+		search: f.name_contains,
+		minDuration: secs(f.min_duration_min),
+		maxDuration: secs(f.max_duration_min),
+		minElevation: f.min_elevation_gain_m,
+		maxElevation: f.max_elevation_gain_m,
+		excludeChildren: f.exclude_children ? "true" : undefined,
+		upperLatitude: f.area?.north,
+		lowerLatitude: f.area?.south,
+		leftLongitude: f.area?.west,
+		rightLongitude: f.area?.east,
 	});
 
 	server.registerTool(
@@ -591,7 +629,8 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 		{
 			title: "Search activities",
 			description:
-				"List individual recorded activities (runs, rides, swims, strength, etc.) with the activity_id needed for get_activity. " +
+				"List individual recorded activities (runs, rides, swims, strength, etc.) with the activity_id needed for get_activity and get_activity_analysis. " +
+				"Filter by date, type, race, distance, duration, elevation gain, name text or a lat/long box. " +
 				"For totals, averages or trends over weeks/months, use summarize_activities instead: it is far smaller. " +
 				"Default detail='compact' returns key stats only (distance m, duration/movingDuration s, averageSpeed/maxSpeed m/s, HR, elevation, calories, cadence, power, training effect). " +
 				"Use detail='full' only when a field you need is missing, and with a small limit. " +
