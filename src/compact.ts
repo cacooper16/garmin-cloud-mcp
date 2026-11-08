@@ -97,6 +97,15 @@ export function compactSleep(s: Raw): Raw {
 		factors[k] = v.qualifierKey ?? v.value;
 	}
 	const need = isObj(s.sleepNeed) ? s.sleepNeed : {};
+	const next = isObj(s.nextSleepNeed) ? s.nextSleepNeed : {};
+	// What moved tonight's sleep need off baseline. trainingFeedback is the
+	// closest the Personal API gets to Garmin's training status (e.g. HIGH_ACWR_AND_CHRONIC).
+	const drivers = defined({
+		training: need.trainingFeedback ?? undefined,
+		hrv: need.hrvAdjustment ?? undefined,
+		sleep_history: need.sleepHistoryAdjustment ?? undefined,
+		nap: need.napAdjustment ?? undefined,
+	});
 	return defined({
 		date: s.calendarDate,
 		dow: typeof s.calendarDate === "string" ? weekday(s.calendarDate) : undefined,
@@ -116,32 +125,59 @@ export function compactSleep(s: Raw): Raw {
 		avg_hr: num(s.avgHeartRate),
 		avg_stress: num(s.avgSleepStress),
 		avg_respiration: num(s.averageRespirationValue),
+		lowest_respiration: num(s.lowestRespirationValue),
+		highest_respiration: num(s.highestRespirationValue),
 		avg_spo2: num(s.averageSpO2Value),
 		lowest_spo2: num(s.lowestSpO2Value),
 		sleep_need_min: num(need.actual),
+		sleep_need_baseline_min: num(need.baseline),
 		sleep_need_feedback: need.feedback ?? undefined,
+		sleep_need_drivers: Object.keys(drivers).length ? drivers : undefined,
+		next_sleep_need_min: num(next.actual),
+		next_sleep_need_feedback: next.feedback ?? undefined,
+		insight: s.sleepScoreInsight && s.sleepScoreInsight !== "NONE" ? s.sleepScoreInsight : undefined,
+		personalized_insight: s.sleepScorePersonalizedInsight ?? undefined,
 	});
 }
 
 // ---- body battery -------------------------------------------------------
 
-type Descriptor = { index?: unknown; key?: unknown };
-
-/** Finds a column index in Garmin's [descriptor list] + [[row]] layout. */
+/**
+ * Finds a column index in Garmin's [descriptor list] + [[row]] layout.
+ * Descriptors are {index, key}, or for Body Battery
+ * {bodyBatteryValueDescriptorIndex, bodyBatteryValueDescriptorKey}.
+ */
 function column(descriptors: unknown, match: RegExp, fallback: number): number {
 	if (Array.isArray(descriptors)) {
-		for (const d of descriptors as Descriptor[]) {
-			if (typeof d?.key === "string" && match.test(d.key) && typeof d.index === "number") return d.index;
+		for (const d of descriptors) {
+			if (!isObj(d)) continue;
+			const key = d.key ?? d.bodyBatteryValueDescriptorKey;
+			const index = d.index ?? d.bodyBatteryValueDescriptorIndex;
+			if (typeof key === "string" && match.test(key) && typeof index === "number") return index;
 		}
 	}
 	return fallback;
 }
 
-/** One day's Body Battery report, with the intraday readings reduced to min/max. */
+/** "HH:MM" local time from a GMT epoch in ms and a local offset. */
+const hhmm = (ms: number, offsetMs: number) => new Date(ms + offsetMs).toISOString().slice(11, 16);
+
+/**
+ * One day's Body Battery report. The Personal API only carries a handful of
+ * key readings per day (midnight, the overnight peak, a few daytime points,
+ * the last reading), so they're returned as-is in local time with min/max.
+ */
 export function compactBodyBattery(r: Raw): Raw {
-	const rows = Array.isArray(r.bodyBatteryValuesArray) ? (r.bodyBatteryValuesArray as unknown[][]) : [];
-	const lvl = column(r.bodyBatteryValueDescriptorDTOList, /level|value/i, 2);
-	const levels = rows.map((row) => num(Array.isArray(row) ? row[lvl] : undefined)).filter((n) => n !== undefined);
+	const rows = (Array.isArray(r.bodyBatteryValuesArray) ? (r.bodyBatteryValuesArray as unknown[]) : []).filter(Array.isArray);
+	const lvl = column(r.bodyBatteryValueDescriptorDTOList, /level/i, rows[0]?.length === 2 ? 1 : 2);
+	const ts = column(r.bodyBatteryValueDescriptorDTOList, /timestamp/i, 0);
+	const off = localOffsetMs(r);
+	const readings = rows.flatMap((row) => {
+		const t = num(row[ts]);
+		const v = num(row[lvl]);
+		return v === undefined ? [] : [{ time: t !== undefined && t > 1e11 ? hhmm(t, off) : undefined, level: v }];
+	});
+	const levels = readings.map((x) => x.level);
 	const events = Array.isArray(r.bodyBatteryActivityEvent)
 		? (r.bodyBatteryActivityEvent as unknown[]).filter(isObj).map((e) => stripNoise(e))
 		: undefined;
@@ -151,6 +187,7 @@ export function compactBodyBattery(r: Raw): Raw {
 		drained: num(r.drained),
 		highest: levels.length ? Math.max(...levels) : undefined,
 		lowest: levels.length ? Math.min(...levels) : undefined,
+		readings_local: readings.length ? readings.map((x) => defined({ ...x })) : undefined,
 		events: events?.length ? events : undefined,
 		feedback: stripNoise(r.endOfDayBodyBatteryDynamicFeedbackEvent ?? r.bodyBatteryDynamicFeedbackEvent) ?? undefined,
 	});
@@ -166,22 +203,31 @@ function localOffsetMs(d: Raw): number {
 	return Number.isFinite(off) ? off : 0;
 }
 
+/** A local time-of-day window, "HH:MM" inclusive at both ends. */
+export type TimeWindow = { from?: string; to?: string };
+
 /**
  * Intraday HR (a reading every ~2 minutes) reduced to hourly min/avg/max in
  * local time, keeping the day's resting/min/max and 7-day resting average.
+ * With a window, every reading inside it is returned too.
  */
-export function compactHeartRate(d: Raw): Raw {
+export function compactHeartRate(d: Raw, window?: TimeWindow): Raw {
 	const rows = Array.isArray(d.heartRateValues) ? (d.heartRateValues as unknown[][]) : [];
 	const ts = column(d.heartRateValueDescriptors, /time/i, 0);
 	const hr = column(d.heartRateValueDescriptors, /heart|rate|value/i, 1);
 	const off = localOffsetMs(d);
 	const buckets = new Map<string, number[]>();
+	const inWindow: [string, number][] = [];
+	const from = window?.from ?? "00:00";
+	const to = window?.to ?? "23:59";
 	for (const row of rows) {
 		if (!Array.isArray(row)) continue;
 		const t = num(row[ts]);
 		const v = num(row[hr]);
 		if (t === undefined || v === undefined || v <= 0) continue;
-		const hour = new Date(t + off).toISOString().slice(11, 13);
+		const time = hhmm(t, off);
+		if (window && time >= from && time <= to) inWindow.push([time, v]);
+		const hour = time.slice(0, 2);
 		let b = buckets.get(hour);
 		if (!b) buckets.set(hour, (b = []));
 		b.push(v);
@@ -202,6 +248,7 @@ export function compactHeartRate(d: Raw): Raw {
 		max_hr: num(d.maxHeartRate),
 		readings: rows.length,
 		hourly_local: hourly,
+		readings_local: window ? (inWindow.length ? inWindow : `no readings between ${from} and ${to}`) : undefined,
 	});
 }
 
@@ -267,7 +314,19 @@ const DETAIL_FIELDS = [
 	"totalReps",
 ] as const;
 
-const SPLIT_FIELDS = ["splitType", "noOfSplits", "distance", "duration", "averageSpeed", "averageHR", "elevationGain"] as const;
+const SPLIT_FIELDS = [
+	"splitType",
+	"noOfSplits",
+	"distance",
+	"duration",
+	"averageSpeed",
+	"avgGradeAdjustedSpeed",
+	"averageHR",
+	"elevationGain",
+	"averageRunCadence",
+	"averagePower",
+	"groundContactTime",
+] as const;
 
 /**
  * One activity from /activity-service/activity/{id}, reduced from 200+ summary

@@ -433,7 +433,8 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_sleep_summaries",
 		"Sleep summaries",
-		"Nightly sleep over a range, one row per night: hours of sleep/deep/light/REM/awake, sleep score and factor ratings, HR, stress, respiration, SpO2, sleep need.",
+		"Nightly sleep over a range, one row per night: hours of sleep/deep/light/REM/awake, sleep score and factor ratings, insights, HR, stress, respiration (avg/low/high), SpO2, " +
+			"sleep need vs baseline with what drove it (training load, e.g. HIGH_ACWR_AND_CHRONIC, HRV, sleep history, naps) and next night's need.",
 		SLEEP,
 		{ chunkDays: 31, compact: each(compactSleep) },
 	);
@@ -459,7 +460,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_body_battery",
 		"Body Battery",
-		"Daily Body Battery over a range: charged, drained, highest, lowest, and the events that moved it (sleep, activities, stress).",
+		"Daily Body Battery over a range: charged, drained, highest, lowest, Garmin's key readings for the day in local time (about 6: midnight, overnight peak, morning, afternoon, last), and the events that moved it (sleep, activities, stress).",
 		(s, e) => ({
 			path: "/wellness-service/wellness/bodyBattery/reports/daily",
 			params: { startDate: s, endDate: e },
@@ -475,12 +476,33 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	);
 
 	// -- Heart, activity volume, body
-	dayTool(
+	const localTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM (24-hour)");
+	server.registerTool(
 		"get_heart_rate",
-		"Heart rate (one day)",
-		"Heart rate for one day: resting, min, max, 7-day resting average, and hourly min/avg/max in local time. detail='full' returns every ~2-minute reading (large).",
-		(d) => ({ path: "/wellness-service/wellness/dailyHeartRate", params: { date: d } }),
-		compactHeartRate,
+		{
+			title: "Heart rate (one day)",
+			description:
+				"Heart rate for one day: resting, min, max, 7-day resting average, and hourly min/avg/max in local time. " +
+				"Give from/to (local HH:MM) to also get every ~2-minute reading in that window, e.g. overnight or around a workout. " +
+				"detail='full' returns Garmin's raw payload (every reading, large).",
+			inputSchema: day.extend({
+				from: localTime.optional().describe("Start of a full-resolution window, local HH:MM. Defaults to 00:00 when only 'to' is given."),
+				to: localTime.optional().describe("End of the window, local HH:MM, inclusive. Defaults to 23:59 when only 'from' is given."),
+				detail: detailParam,
+			}),
+			annotations: { ...READ_ONLY, title: "Heart rate (one day)" },
+		},
+		(args) =>
+			run(async () => {
+				const date = await resolveDay(args.date);
+				const data = await garmin().get("/wellness-service/wellness/dailyHeartRate", { date });
+				if (args.detail === "full" || !isObj(data)) return data;
+				const window = args.from || args.to ? { from: args.from, to: args.to } : undefined;
+				if (window?.from && window.to && window.from > window.to) {
+					throw new GarminApiError("'from' is after 'to'. For an overnight window, call once per date.");
+				}
+				return compactHeartRate(data, window);
+			}),
 	);
 	rangeTool(
 		"get_steps",
