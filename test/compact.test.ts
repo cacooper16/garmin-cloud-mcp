@@ -127,8 +127,68 @@ describe("compactors", () => {
 			drained: 55,
 			highest: 88,
 			lowest: 12,
+			readings_local: [{ level: 30 }, { level: 88 }, { level: 12 }],
 			events: [{ eventType: "SLEEP", bodyBatteryImpact: 55 }],
 		});
+	});
+
+	it("reads Body Battery in the Personal API's two-column layout, with local times", () => {
+		// Shape seen from the live API: bodyBatteryValueDescriptor* keys, [timestamp, level] rows.
+		const midnight = Date.parse("2026-11-06T23:00:00Z"); // local midnight at UTC+1
+		const r = compactBodyBattery({
+			date: "2026-11-07",
+			startTimestampGMT: "2026-11-06T23:00:00.0",
+			startTimestampLocal: "2026-11-07T00:00:00.0",
+			bodyBatteryValueDescriptorDTOList: [
+				{ bodyBatteryValueDescriptorIndex: 0, bodyBatteryValueDescriptorKey: "timestamp" },
+				{ bodyBatteryValueDescriptorIndex: 1, bodyBatteryValueDescriptorKey: "bodyBatteryLevel" },
+			],
+			bodyBatteryValuesArray: [
+				[midnight, 24],
+				[midnight + (5 * 60 + 54) * 60_000, 87],
+				[midnight + (23 * 60 + 15) * 60_000, 22],
+			],
+		});
+		assert.equal(r.highest, 87);
+		assert.equal(r.lowest, 22);
+		assert.deepEqual(r.readings_local, [
+			{ time: "00:00", level: 24 },
+			{ time: "05:54", level: 87 },
+			{ time: "23:15", level: 22 },
+		]);
+	});
+
+	it("keeps sleep need drivers, next night's need, respiration range and insights", () => {
+		const r = compactSleep({
+			...sleepDto("2026-11-07", 7, 86),
+			lowestRespirationValue: 7,
+			highestRespirationValue: 18,
+			sleepScoreInsight: "NONE",
+			sleepScorePersonalizedInsight: "RHYTHM_POS_GOOD_SLEEP_GOOD_TIMING",
+			sleepNeed: {
+				baseline: 470,
+				actual: 500,
+				feedback: "INCREASED",
+				trainingFeedback: "HIGH_ACWR_AND_CHRONIC",
+				hrvAdjustment: "NO_CHANGE",
+				sleepHistoryAdjustment: "DECREASING",
+				napAdjustment: "NO_CHANGE",
+				userProfilePk: 1,
+			},
+			nextSleepNeed: { actual: 470, feedback: "NO_CHANGE_NO_ADJUSTMENTS" },
+		});
+		assert.deepEqual(r.sleep_need_drivers, {
+			training: "HIGH_ACWR_AND_CHRONIC",
+			hrv: "NO_CHANGE",
+			sleep_history: "DECREASING",
+			nap: "NO_CHANGE",
+		});
+		assert.equal(r.sleep_need_baseline_min, 470);
+		assert.equal(r.next_sleep_need_min, 470);
+		assert.equal(r.lowest_respiration, 7);
+		assert.equal(r.highest_respiration, 18);
+		assert.equal(r.insight, undefined, "NONE is noise");
+		assert.equal(r.personalized_insight, "RHYTHM_POS_GOOD_SLEEP_GOOD_TIMING");
 	});
 
 	it("buckets intraday HR into local hours", () => {
@@ -154,6 +214,34 @@ describe("compactors", () => {
 		assert.equal(hourly[0]!.min, 50);
 		assert.equal(hourly[0]!.max, 79);
 		assert.equal(r.resting_hr, 48);
+		assert.equal(r.readings_local, undefined, "full resolution only on request");
+	});
+
+	it("returns every reading inside a local time window", () => {
+		const start = Date.parse("2026-11-05T05:00:00Z"); // local midnight at UTC-5
+		const r = compactHeartRate(
+			{
+				calendarDate: "2026-11-05",
+				startTimestampGMT: "2026-11-05T05:00:00.0",
+				startTimestampLocal: "2026-11-05T00:00:00.0",
+				heartRateValueDescriptors: [
+					{ index: 0, key: "timestamp" },
+					{ index: 1, key: "heartrate" },
+				],
+				heartRateValues: Array.from({ length: 60 }, (_, i) => [start + i * 120_000, 50 + i]),
+			},
+			{ from: "00:30", to: "00:36" },
+		);
+		assert.deepEqual(r.readings_local, [
+			["00:30", 65],
+			["00:32", 66],
+			["00:34", 67],
+			["00:36", 68],
+		]);
+		assert.match(
+			String(compactHeartRate({ heartRateValues: [] }, { from: "01:00" }).readings_local),
+			/no readings between 01:00 and 23:59/,
+		);
 	});
 
 	it("drops per-reading SpO2 series", () => {

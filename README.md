@@ -40,6 +40,7 @@ Ask things like:
 - _"How much of my running is easy vs hard?"_
 - _"Which day of the week do I sleep worst?"_
 - _"Compare my last two long runs."_
+- _"Give me my km splits for Sunday's race. Did I negative split?"_
 
 Here it is in Claude on a phone (cloud version), projecting a 10k time from
 recent runs:
@@ -65,7 +66,7 @@ recent runs:
 | Nothing listening on the network             |  ✅   |       |
 | Cache kept between sessions                  |       |  ✅   |
 | Free to run                                  |  ✅   |  ✅   |
-| All 25 tools and 5 prompts                   |  ✅   |  ✅   |
+| All 26 tools and 5 prompts                   |  ✅   |  ✅   |
 
 ### Still deciding?
 
@@ -331,10 +332,13 @@ heart rate. This server does the heavy lifting itself:
 - **Partial results.** If one source fails (say HRV for a night), the rest still
   comes back with a short note, so the model doesn't retry everything.
 - **Caching.** Data at least 3 days old has settled, so it's cached for 7 days,
-  and activity details for a day. Follow-up questions skip Garmin. (Locally,
+  and activity details for a day. Activity analyses never change, so they're
+  cached indefinitely (only the derived tables, never the file). Follow-up questions skip Garmin. (Locally,
   the cache lasts until the app restarts the server.)
-- **Things Garmin's API doesn't give you directly:** training load
-  (acute:chronic ratio), time in heart-rate zones, weekday patterns,
+- **Things Garmin's API doesn't give you directly:** per-km/mile splits and
+  best efforts (computed from the activity's FIT file in the server, so a
+  two-hour run comes back as a few KB of tables, not 7,000 samples), training
+  load (acute:chronic ratio), time in heart-rate zones, weekday patterns,
   distance-weighted pace, side-by-side activity comparison.
 - **Prompt templates** for apps that support MCP prompts (such as Claude's
   connector menu): _Am I ready to train today?_, _Sleep report_, _Training
@@ -349,31 +353,33 @@ on its own means "since then": the range ends today.
 
 **Start here.** These answer common questions in one call with a small response:
 
-| Tool                   | Answers                                                                                                                                                                                 |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `get_readiness`        | "How recovered am I?", "How did I sleep?": that night's sleep, HRV vs baseline, resting HR, Body Battery, each against your previous 7 days; training load; the last 3 days of training |
-| `summarize_wellness`   | Sleep, resting HR, HRV, stress, steps and Body Battery trends: by week, month, weekday or overall                                                                                       |
-| `summarize_activities` | Training totals: distance, time, pace, HR, training load and time in HR zones, by week, month, weekday or overall                                                                       |
-| `compare_activities`   | 2–5 activities side by side                                                                                                                                                             |
+| Tool                    | Answers                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `get_readiness`         | "How recovered am I?", "How did I sleep?": that night's sleep, HRV vs baseline, resting HR, Body Battery, each against your previous 7 days; training load; the last 3 days of training    |
+| `summarize_wellness`    | Sleep, resting HR, HRV, stress, steps and Body Battery trends: by week, month, weekday or overall                                                                                          |
+| `summarize_activities`  | Training totals: distance, time, pace, HR, training load and time in HR zones, by week, month, weekday or overall                                                                          |
+| `compare_activities`    | 2–5 activities side by side                                                                                                                                                                |
+| `get_activity_analysis` | One activity from its original FIT file: per-km or per-mile splits, the watch's laps and workout reps, best efforts (1 km to marathon), time in your HR zones, first- vs second-half drift |
 
 **Detail.** Compact by default; pass `detail: "full"` for Garmin's raw data.
 
-| Tool                                                                                 | Data                                                                                                 |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `get_daily_summaries`                                                                | One row per day: steps, calories, HR, intensity minutes, stress, Body Battery                        |
-| `get_sleep_summaries` / `get_sleep`                                                  | Sleep hours by stage, score, HR, respiration, SpO2, over a range or for one night                    |
-| `get_hrv_summaries` / `get_hrv`                                                      | HRV over a range, or one night's readings                                                            |
-| `get_body_battery`, `get_stress`, `get_steps`                                        | Daily series over a range                                                                            |
-| `get_heart_rate`                                                                     | One day, as hourly min/avg/max                                                                       |
-| `get_spo2`, `get_fitness_age`                                                        | Single-day detail                                                                                    |
-| `get_weight`, `get_weight_goals`, `get_hydration`, `get_wellness_activity_summaries` | Ranges                                                                                               |
-| `search_activities`                                                                  | Individual activities, filterable by type, subtype, race and distance, sortable by distance or speed |
-| `get_activity`, `get_activity_workouts`                                              | One activity in detail                                                                               |
-| `get_nutrition`, `get_menstrual_cycle`                                               | Single-day detail                                                                                    |
-| `get_profile`                                                                        | Units, time zone and heart-rate zones                                                                |
+| Tool                                                                                 | Data                                                                                                                                       |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `get_daily_summaries`                                                                | One row per day: steps, calories, HR, intensity minutes, stress, Body Battery                                                              |
+| `get_sleep_summaries` / `get_sleep`                                                  | Sleep hours by stage, score, HR, respiration, SpO2, sleep need and what drove it, over a range or for one night                            |
+| `get_hrv_summaries` / `get_hrv`                                                      | HRV over a range, or one night's readings                                                                                                  |
+| `get_body_battery`, `get_stress`, `get_steps`                                        | Daily series over a range (Body Battery includes the day's key readings)                                                                   |
+| `get_heart_rate`                                                                     | One day, as hourly min/avg/max, plus every reading in a `from`/`to` window if given                                                        |
+| `get_spo2`, `get_fitness_age`                                                        | Single-day detail                                                                                                                          |
+| `get_weight`, `get_weight_goals`, `get_hydration`, `get_wellness_activity_summaries` | Ranges                                                                                                                                     |
+| `search_activities`                                                                  | Individual activities, filterable by type, subtype, race, distance, duration, elevation gain, name and area, sortable by distance or speed |
+| `get_activity`, `get_activity_workouts`                                              | One activity in detail                                                                                                                     |
+| `get_nutrition`, `get_menstrual_cycle`                                               | Single-day detail                                                                                                                          |
+| `get_profile`                                                                        | Units, time zone and heart-rate zones                                                                                                      |
 
-Together these cover every JSON endpoint in
-[Garmin's Personal API spec](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/).
+Together these cover every endpoint in
+[Garmin's Personal API spec](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/),
+including the activity file download that `get_activity_analysis` reads.
 There's deliberately no "GET any path" tool: with one, the model guessed at
 endpoints that don't exist and wasted calls.
 
@@ -455,7 +461,9 @@ connected app is refused on its next request.
 - **Garmin credentials.** The key lives only in Cloudflare secrets. The 24-hour
   bearer token is cached in KV under a hash of the key, never the key itself.
   Cached past-date responses live in the same KV namespace, in your Cloudflare
-  account only, and expire after 7 days.
+  account only, and expire after 7 days. Activity analyses (split and lap
+  tables, never the FIT file or GPS positions) are kept there indefinitely,
+  since an activity's file never changes.
 - **No private addresses.** `global_fetch_strictly_public` blocks the Worker
   from fetching private addresses.
 
@@ -495,8 +503,10 @@ the deployed Worker. `npm audit --omit=dev` is clean.
 - **Read-only.** It can't log activities, weight, hydration or food, or change
   goals, settings or workouts. The Personal API has no write access, so your
   AI app can read your Garmin data but never change it.
-- **No activity file downloads.** FIT files aren't exposed, since a chat model can't
-  do much with the binary.
+- **No raw activity files or GPS tracks.** `get_activity_analysis` reads the
+  FIT file in the server and returns only derived tables; the file, samples and
+  positions never reach the model. Manual entries and GPX/TCX imports have no
+  FIT data, so the tool says so instead.
 - **Rate limits unpublished.** Garmin hasn't published Personal API rate
   limits. A 429 comes back as a clear tool error.
 

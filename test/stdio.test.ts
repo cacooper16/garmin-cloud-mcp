@@ -125,7 +125,7 @@ describe("stdio server", () => {
 	it("lists 25 read-only tools", async () => {
 		const res = await client.request("tools/list");
 		const tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] = res.result.tools;
-		assert.equal(tools.length, 25);
+		assert.equal(tools.length, 26);
 		for (const t of tools) assert.equal(t.annotations?.readOnlyHint, true, `${t.name} should be read-only`);
 	});
 
@@ -142,6 +142,6 @@ describe("stdio server", () => {
 		assert.equal(res.result?.isError, true);
 
 		const again = await client.request("tools/list");
-		assert.equal(again.result.tools.length, 25);
+		assert.equal(again.result.tools.length, 26);
 	});
 });
