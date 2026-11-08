@@ -21,6 +21,8 @@ const RESPONSE_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 /** Only cache requests whose dates all end at least this many days ago (covers late syncs). */
 const RESPONSE_CACHE_MIN_AGE_DAYS = 3;
 const REQUEST_TIMEOUT_MS = 30_000;
+/** Largest activity download we'll read. A long ultra's zipped FIT is a few MB. */
+const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -111,23 +113,7 @@ export class GarminClient {
 			if (hit !== null) return JSON.parse(hit);
 		}
 
-		let token = await this.getToken(false);
-		let res = await this.request(url, token);
-
-		if (res.status === 401) {
-			// Token revoked or expired early: get a fresh one and retry once.
-			// Release the unread body first so the connection isn't held open.
-			await res.body?.cancel();
-			await this.invalidateToken();
-			token = await this.getToken(true);
-			res = await this.request(url, token);
-		}
-
-		if (!res.ok) {
-			const body = (await res.text()).slice(0, 500);
-			throw new GarminApiError(describeHttpError(res.status, url.pathname, body), res.status);
-		}
-
+		const res = await this.send(url, "application/json");
 		const text = await res.text();
 		let data: unknown = null;
 		if (text) {
@@ -144,6 +130,67 @@ export class GarminClient {
 				.catch(() => {});
 		}
 		return data;
+	}
+
+	/**
+	 * GET a binary file (e.g. an activity download). Never cached: callers
+	 * cache what they derive from it instead.
+	 */
+	async getBytes(path: string, maxBytes = MAX_DOWNLOAD_BYTES): Promise<Uint8Array> {
+		const res = await this.send(this.buildUrl(path), "*/*");
+		const declared = Number(res.headers.get("content-length"));
+		if (declared > maxBytes) {
+			await res.body?.cancel();
+			throw new GarminApiError(`Garmin's file for ${path} is too large to process (${declared} bytes).`);
+		}
+		const bytes = new Uint8Array(await res.arrayBuffer());
+		if (bytes.length > maxBytes) throw new GarminApiError(`Garmin's file for ${path} is too large to process.`);
+		return bytes;
+	}
+
+	/** Reads a value this server cached under `name`, scoped to the current API key. */
+	async getCached<T>(name: string): Promise<T | undefined> {
+		const hit = await this.kv.get(await this.scopedKey(name)).catch(() => null);
+		if (hit === null) return undefined;
+		try {
+			return JSON.parse(hit) as T;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/** Caches a derived value under `name`; no TTL means it's kept indefinitely. Best effort. */
+	async putCached(name: string, value: unknown, ttl?: number): Promise<void> {
+		const key = await this.scopedKey(name);
+		await this.kv
+			.put(key, JSON.stringify(value), ttl === undefined ? undefined : { expirationTtl: Math.max(60, ttl) })
+			.catch(() => {});
+	}
+
+	private async scopedKey(name: string): Promise<string> {
+		const h = await sha256Hex(`${await this.cacheKey()}\0${name}`);
+		return `garmin:derived:${h.slice(0, 40)}`;
+	}
+
+	/** Sends an authenticated GET, retrying once with a fresh token on 401. Throws on any non-2xx. */
+	private async send(url: URL, accept: string): Promise<Response> {
+		let token = await this.getToken(false);
+		let res = await this.request(url, token, accept);
+
+		if (res.status === 401) {
+			// Token revoked or expired early: get a fresh one and retry once.
+			// Release the unread body first so the connection isn't held open.
+			await res.body?.cancel();
+			await this.invalidateToken();
+			token = await this.getToken(true);
+			res = await this.request(url, token, accept);
+		}
+
+		if (!res.ok) {
+			const body = (await res.text()).slice(0, 500);
+			throw new GarminApiError(describeHttpError(res.status, url.pathname, body), res.status);
+		}
+		return res;
 	}
 
 	/** Cache key per API key and URL, so rotating GARMIN_API_KEY starts a fresh cache. */
@@ -168,10 +215,10 @@ export class GarminClient {
 		return url;
 	}
 
-	private async request(url: URL, token: string): Promise<Response> {
+	private async request(url: URL, token: string, accept: string): Promise<Response> {
 		return this.fetchImpl(url.toString(), {
 			method: "GET",
-			headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+			headers: { Accept: accept, Authorization: `Bearer ${token}` },
 			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 		});
 	}

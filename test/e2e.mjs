@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { createInterface } from "node:readline";
 import { Miniflare } from "miniflare";
+import { buildFit, buildZip, steadyRun } from "./fit-fixture.ts";
 
 const BASE = "http://localhost:8788";
 const REDIRECT = "https://claude.ai/api/mcp/auth_callback";
@@ -90,6 +91,16 @@ async function outbound(req) {
 		}
 		if (url.pathname === "/userprofile-service/userprofile/settings") {
 			return Response.json({ timeZone: "Pacific/Kiritimati", measurementSystem: "metric" }); // UTC+14
+		}
+		const download = url.pathname.match(/^\/download-service\/files\/activity\/(\d+)$/);
+		if (download) {
+			if (download[1] === "404") return new Response("not found", { status: 404 });
+			// A synthetic 2.5 km run at 4 m/s (no GPS), zipped like Garmin's download.
+			const zip = buildZip([{ name: `${download[1]}_ACTIVITY.fit`, data: buildFit({ records: steadyRun(625, 4) }) }]);
+			return new Response(zip, { headers: { "content-type": "application/x-zip-compressed" } });
+		}
+		if (url.pathname === "/biometric-service/heartRateZones/v2") {
+			return Response.json([{ sport: "DEFAULT", zone1Floor: 100, zone2Floor: 120, zone3Floor: 140, zone4Floor: 160, zone5Floor: 180, maxHeartRateUsed: 195 }]);
 		}
 		const detail = url.pathname.match(/^\/activity-service\/activity\/(\d+)$/);
 		if (detail) {
@@ -547,6 +558,37 @@ try {
 		const { json } = await mcp(accessToken, "tools/call", { name: "get_activity", arguments: { activity_id: "11" } }, session);
 		assert.equal(JSON.parse(json.result.content[0].text).activityId, 11);
 		assert.equal(garminCalls.length, before, "served from the cache filled by compare_activities");
+	});
+
+	await step("get_activity_analysis unzips and decodes the FIT file in the Worker, then caches the result", async () => {
+		const call = () =>
+			mcp(accessToken, "tools/call", { name: "get_activity_analysis", arguments: { activity_id: "77" } }, session);
+		const before = garminCalls.length;
+		const { json } = await call();
+		assert.ok(!json.result.isError, json.result.content?.[0]?.text);
+		const r = JSON.parse(json.result.content[0].text);
+		assert.deepEqual(
+			r.splits.map((s) => [s.split, s.time, s.pace]),
+			[
+				["1", "4:10", "4:10 /km"],
+				["2", "4:10", "4:10 /km"],
+				["last 0.5 km", "2:05", "4:10 /km"],
+			],
+		);
+		assert.equal(r.best_efforts[0].time, "4:10");
+		assert.equal(r.hr_zones.zones.find((z) => z.zone === 3).pct, 100); // HR 140-150 vs zone 3 = 140-159
+		assert.ok(garminCalls.slice(before).some((c) => c.startsWith("/download-service/files/activity/77")));
+
+		const mid = garminCalls.length;
+		await call();
+		assert.ok(
+			!garminCalls.slice(mid).some((c) => c.startsWith("/download-service")),
+			"second call is served from the cached analysis",
+		);
+
+		const missing = await mcp(accessToken, "tools/call", { name: "get_activity_analysis", arguments: { activity_id: "404" } }, session);
+		assert.ok(!missing.json.result.isError);
+		assert.match(JSON.parse(missing.json.result.content[0].text).unavailable, /no original file/);
 	});
 
 	await step("prompt templates are listed", async () => {

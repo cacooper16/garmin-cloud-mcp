@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { compactActivity, summarizeActivities, trainingLoadRatio } from "./activities.ts";
+import { formatAnalysis, type HrZones, loadAnalysis, SECTIONS, type Unit, zonesFromApi } from "./analysis.ts";
 import {
 	compactActivityDetail,
 	compactBodyBattery,
@@ -147,12 +148,13 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 
 	// Profile settings (time zone) are fetched only when a relative date is used, and cached for a day.
 	let settingsPromise: Promise<Record<string, unknown>> | undefined;
-	const userToday = async () => {
-		settingsPromise ??= garmin()
+	const settings = () =>
+		(settingsPromise ??= garmin()
 			.get(SETTINGS, undefined, { cacheTtl: 86_400 })
-			.then((v) => (isObj(v) ? v : {}))
-			.catch(() => ({}));
-		const tz = (await settingsPromise).timeZone;
+			.then((v): Record<string, unknown> => (isObj(v) ? v : {}))
+			.catch((): Record<string, unknown> => ({})));
+	const userToday = async () => {
+		const tz = (await settings()).timeZone;
 		return todayIn(typeof tz === "string" ? tz : undefined);
 	};
 	const resolveDay = async (date: string) =>
@@ -648,7 +650,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 		{
 			title: "Activity detail",
 			description:
-				"One activity in detail: distance, times, pace (per km and mile), speed, HR, cadence, running dynamics, power, training effect and load, temperature, RPE/feel, and split summaries. " +
+				"One activity in detail: distance, times, pace (per km and mile), speed, HR, cadence, running dynamics, power, training effect and load, temperature, RPE/feel, and split summaries (warm-up/active/cool-down totals, not per-km; use get_activity_analysis for km/mile splits and laps). " +
 				"detail='full' returns Garmin's raw record (200+ fields).",
 			inputSchema: activityId.extend({ detail: detailParam }),
 			annotations: { ...READ_ONLY, title: "Activity detail" },
@@ -705,6 +707,56 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 			run(() => garmin().get(`${ACTIVITY(activity_id)}/workouts`)),
 	);
 
+	server.registerTool(
+		"get_activity_analysis",
+		{
+			title: "Activity analysis (splits, laps, best efforts)",
+			description:
+				"Per-km or per-mile splits, the watch's laps / workout reps, best efforts, time in HR zones and first-vs-second-half drift for ONE recorded activity, " +
+				"computed from Garmin's original FIT file. Use for 'my km splits', 'did I negative split', 'fastest 5 km in this run', 'how long in zone 2', 'did my HR drift'. " +
+				"splits: one row per km/mile (time, pace, cumulative time, avg/max HR, cadence, power, elevation gain/loss), timer time so pauses don't count, final partial split labelled with its distance. " +
+				"laps: the watch's own laps with intensity (warmup/active/cooldown/rest) and trigger (manual, distance, ...). " +
+				"best_efforts: fastest continuous 1 km, 1 mile, 5 km, 10 km, half and marathon the activity is long enough for, with where each started. " +
+				"hr_zones: time in each of the user's HR zones. drift: first vs second half pace, HR and aerobic decoupling. " +
+				"Get the ID from search_activities. Manual entries and GPX/TCX imports return a short 'unavailable' note.",
+			inputSchema: activityId.extend({
+				include: z
+					.array(z.enum(SECTIONS))
+					.min(1)
+					.default([...SECTIONS])
+					.describe("Sections to return. Drop ones the question doesn't need for a shorter answer."),
+				unit: z
+					.enum(["km", "mile"])
+					.optional()
+					.describe("Split length and pace unit. Defaults to the user's Garmin unit setting."),
+			}),
+			annotations: { ...READ_ONLY, title: "Activity analysis" },
+		},
+		({ activity_id, include, unit }) =>
+			run(async () => {
+				const g = garmin();
+				const loaded = await loadAnalysis(g, activity_id);
+				if ("unavailable" in loaded) return { activity_id, unavailable: loaded.unavailable };
+				const a = loaded.analysis;
+				// Garmin's measurementSystem is "metric", "statute_us" or "statute_uk" (miles).
+				const system = (await settings()).measurementSystem;
+				const resolvedUnit: Unit = unit ?? (typeof system === "string" && system.startsWith("statute") ? "mile" : "km");
+				let zones: HrZones | undefined;
+				let zonesUnavailable: string | undefined;
+				if (include.includes("hr_zones") && a.hasHr) {
+					try {
+						zones = zonesFromApi(
+							await g.get("/biometric-service/heartRateZones/v2", undefined, { cacheTtl: 86_400 }),
+							a.sport,
+						);
+					} catch (err) {
+						zonesUnavailable = errorText(err);
+					}
+				}
+				return { activity_id, ...formatAnalysis(a, { unit: resolvedUnit, include, zones, zonesUnavailable }) };
+			}),
+	);
+
 	// -- Nutrition, goals, women's health
 	dayTool(
 		"get_nutrition",
@@ -739,10 +791,10 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 			}),
 	);
 
-	// No raw-path escape hatch on purpose: these tools cover every JSON endpoint in
+	// No raw-path escape hatch on purpose: these tools cover every endpoint in
 	// Garmin's Personal API Swagger spec, so a generic GET only invited the model to
-	// guess at endpoints that don't exist (golf, training status, etc.). Omitted
-	// from the spec's 26 paths: /download-service/files/activity/{id} (binary FIT
-	// file), /usersummary-service/usersummary/daily (same data as
-	// get_daily_summaries) and /weight-service/weight/all (same as get_weight).
+	// guess at endpoints that don't exist (golf, training status, etc.). The binary
+	// /download-service/files/activity/{id} is read only by get_activity_analysis.
+	// Omitted from the spec's 26 paths: /usersummary-service/usersummary/daily (same
+	// data as get_daily_summaries) and /weight-service/weight/all (same as get_weight).
 }

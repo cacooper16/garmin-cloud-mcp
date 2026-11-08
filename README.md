@@ -65,7 +65,7 @@ recent runs:
 | Nothing listening on the network             |  ✅   |       |
 | Cache kept between sessions                  |       |  ✅   |
 | Free to run                                  |  ✅   |  ✅   |
-| All 25 tools and 5 prompts                   |  ✅   |  ✅   |
+| All 26 tools and 5 prompts                   |  ✅   |  ✅   |
 
 ### Still deciding?
 
@@ -331,10 +331,13 @@ heart rate. This server does the heavy lifting itself:
 - **Partial results.** If one source fails (say HRV for a night), the rest still
   comes back with a short note, so the model doesn't retry everything.
 - **Caching.** Data at least 3 days old has settled, so it's cached for 7 days,
-  and activity details for a day. Follow-up questions skip Garmin. (Locally,
+  and activity details for a day. Activity analyses never change, so they're
+  cached indefinitely (only the derived tables, never the file). Follow-up questions skip Garmin. (Locally,
   the cache lasts until the app restarts the server.)
-- **Things Garmin's API doesn't give you directly:** training load
-  (acute:chronic ratio), time in heart-rate zones, weekday patterns,
+- **Things Garmin's API doesn't give you directly:** per-km/mile splits and
+  best efforts (computed from the activity's FIT file in the server, so a
+  two-hour run comes back as a few KB of tables, not 7,000 samples), training
+  load (acute:chronic ratio), time in heart-rate zones, weekday patterns,
   distance-weighted pace, side-by-side activity comparison.
 - **Prompt templates** for apps that support MCP prompts (such as Claude's
   connector menu): _Am I ready to train today?_, _Sleep report_, _Training
@@ -355,6 +358,7 @@ on its own means "since then": the range ends today.
 | `summarize_wellness`   | Sleep, resting HR, HRV, stress, steps and Body Battery trends: by week, month, weekday or overall                                                                                       |
 | `summarize_activities` | Training totals: distance, time, pace, HR, training load and time in HR zones, by week, month, weekday or overall                                                                       |
 | `compare_activities`   | 2–5 activities side by side                                                                                                                                                             |
+| `get_activity_analysis` | One activity from its original FIT file: per-km or per-mile splits, the watch's laps and workout reps, best efforts (1 km to marathon), time in your HR zones, first- vs second-half drift |
 
 **Detail.** Compact by default; pass `detail: "full"` for Garmin's raw data.
 
@@ -372,8 +376,9 @@ on its own means "since then": the range ends today.
 | `get_nutrition`, `get_menstrual_cycle`                                               | Single-day detail                                                                                    |
 | `get_profile`                                                                        | Units, time zone and heart-rate zones                                                                |
 
-Together these cover every JSON endpoint in
-[Garmin's Personal API spec](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/).
+Together these cover every endpoint in
+[Garmin's Personal API spec](https://developer.garmin.com/gc-developer-program/personal/swagger-docs/),
+including the activity file download that `get_activity_analysis` reads.
 There's deliberately no "GET any path" tool: with one, the model guessed at
 endpoints that don't exist and wasted calls.
 
@@ -495,8 +500,10 @@ the deployed Worker. `npm audit --omit=dev` is clean.
 - **Read-only.** It can't log activities, weight, hydration or food, or change
   goals, settings or workouts. The Personal API has no write access, so your
   AI app can read your Garmin data but never change it.
-- **No activity file downloads.** FIT files aren't exposed, since a chat model can't
-  do much with the binary.
+- **No raw activity files or GPS tracks.** `get_activity_analysis` reads the
+  FIT file in the server and returns only derived tables; the file, samples and
+  positions never reach the model. Manual entries and GPX/TCX imports have no
+  FIT data, so the tool says so instead.
 - **Rate limits unpublished.** Garmin hasn't published Personal API rate
   limits. A 429 comes back as a clear tool error.
 
