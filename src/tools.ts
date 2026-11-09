@@ -15,6 +15,7 @@ import {
 import { GarminApiError, type GarminClient } from "./garmin.ts";
 import { PERIODS, type Period, resolvePeriod, todayIn } from "./periods.ts";
 import { addDays, daysBetween, mapLimit, mergeChunks, splitRange } from "./ranges.ts";
+import { localizeTimes } from "./times.ts";
 import { isObj } from "./util.ts";
 import { buildReadiness, joinByDate, summarizeWellness } from "./wellness.ts";
 
@@ -142,8 +143,8 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	type RangeOpts = {
 		/** Garmin's own per-call limit for this endpoint; longer ranges are split and fetched in parallel. */
 		chunkDays?: number;
-		/** Default (compact) shaping; detail: "full" skips it. */
-		compact?: (payload: unknown) => unknown;
+		/** Default (compact) shaping, given the user's time zone; detail: "full" skips it. */
+		compact?: (payload: unknown, timeZone?: string) => unknown;
 	};
 
 	// Profile settings (time zone) are fetched only when a relative date is used, and cached for a day.
@@ -153,10 +154,12 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 			.get(SETTINGS, undefined, { cacheTtl: 86_400 })
 			.then((v): Record<string, unknown> => (isObj(v) ? v : {}))
 			.catch((): Record<string, unknown> => ({})));
-	const userToday = async () => {
+	/** The user's Garmin profile time zone (IANA), for dates and local times. */
+	const userTimeZone = async () => {
 		const tz = (await settings()).timeZone;
-		return todayIn(typeof tz === "string" ? tz : undefined);
+		return typeof tz === "string" ? tz : undefined;
 	};
+	const userToday = async () => todayIn(await userTimeZone());
 	const resolveDay = async (date: string) =>
 		date === "today" ? userToday() : date === "yesterday" ? addDays(await userToday(), -1) : date;
 	/**
@@ -263,7 +266,14 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				run(async () => {
 					const [s, e] = await resolveDates(args);
 					const { data, failed } = await fetchRange(path, s, e, opts.chunkDays);
-					const shaped = opts.compact && args.detail !== "full" ? opts.compact(data) : data;
+					// Tools with a compact shape keep detail='full' as Garmin's raw payload;
+					// the rest are returned as Garmin sends them, with times made local.
+					const shaped =
+						opts.compact && args.detail === "full"
+							? data
+							: opts.compact
+								? opts.compact(data, await userTimeZone())
+								: localizeTimes(data, undefined, await userTimeZone());
 					return failed.length ? { data: shaped, unavailable: failed } : shaped;
 				}),
 		);
@@ -273,7 +283,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 		title: string,
 		description: string,
 		path: (d: string) => Req,
-		compact?: (payload: Record<string, unknown>) => unknown,
+		compact?: (payload: Record<string, unknown>, timeZone?: string) => unknown,
 	) =>
 		server.registerTool(
 			name,
@@ -287,12 +297,13 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				run(async () => {
 					const req = path(await resolveDay(args.date));
 					const data = await garmin().get(req.path, req.params);
-					return compact && args.detail !== "full" && isObj(data) ? compact(data) : data;
+					if (!compact) return localizeTimes(data, undefined, await userTimeZone());
+					return args.detail !== "full" && isObj(data) ? compact(data, await userTimeZone()) : data;
 				}),
 		);
 
-	const each = (fn: (r: Record<string, unknown>) => unknown) => (payload: unknown) =>
-		Array.isArray(payload) ? payload.filter(isObj).map(fn) : payload;
+	const each = (fn: (r: Record<string, unknown>, timeZone?: string) => unknown) => (payload: unknown, timeZone?: string) =>
+		Array.isArray(payload) ? payload.filter(isObj).map((r) => fn(r, timeZone)) : payload;
 
 	const DAILY = (s: string, e: string) => ({
 		path: "/usersummary-service/v2/dailysummaries",
@@ -335,6 +346,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 					dailySummaryRows(daily),
 					Array.isArray(sleep) ? sleep.filter(isObj) : [],
 					hrvRows(hrv),
+					await userTimeZone(),
 				);
 				const list = acts?.list ?? [];
 				const recentFrom = addDays(date, -2);
@@ -433,7 +445,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_sleep_summaries",
 		"Sleep summaries",
-		"Night-by-night sleep over a range, one compact row per night filed under the date the user woke up: start/end in local time; hours of sleep, deep, light, REM and awake (and naps); " +
+		"Night-by-night sleep over a range, one compact row per night filed under the date the user woke up: start_local/end_local as local 'YYYY-MM-DD HH:MM'; hours of sleep, deep, light, REM and awake (and naps); " +
 			"sleep score with its quality and factor ratings; average HR, stress and respiration (avg/low/high); SpO2 average/lowest; sleep need vs baseline in minutes with what drove it " +
 			"(training load, e.g. HIGH_ACWR_AND_CHRONIC, HRV, sleep history, naps) and next night's need; Garmin's insights. " +
 			"For last night alone use get_readiness or get_sleep; for trends over weeks or months use summarize_wellness. " +
@@ -457,14 +469,14 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	dayTool(
 		"get_hrv",
 		"HRV detail (one night)",
-		"HRV summary plus individual readings for one night. Use get_hrv_summaries unless the readings themselves matter.",
+		"HRV summary plus individual readings for one night, times in local 'YYYY-MM-DD HH:MM'. Use get_hrv_summaries unless the readings themselves matter.",
 		(d) => ({ path: `/hrv-service/hrv/${d}` }),
 	);
 	rangeTool(
 		"get_body_battery",
 		"Body Battery",
 		"Daily Body Battery (Garmin's 0-100 energy estimate) over a range, one compact row per day: charged, drained, highest and lowest; the key readings the Personal API provides, in local time " +
-			"(about 6 a day: midnight, overnight peak, morning, afternoon, last); the events that moved it (sleep, activities, stress); and Garmin's end-of-day feedback. " +
+			"(about 6 a day: midnight, overnight peak, morning, afternoon, last); the events that moved it (sleep, activities, stress); and Garmin's end-of-day feedback. Event and feedback times are local too. " +
 			"For today's state use get_readiness; for trends over weeks or months use summarize_wellness (Body Battery high/low per period). " +
 			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date. detail='full' returns Garmin's raw report.`,
 		(s, e) => ({
@@ -510,7 +522,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				if (window?.from && window.to && window.from > window.to) {
 					throw new GarminApiError("'from' is after 'to'. For an overnight window, call once per date.");
 				}
-				return compactHeartRate(data, window);
+				return compactHeartRate(data, window, await userTimeZone());
 			}),
 	);
 	rangeTool(
@@ -533,7 +545,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	dayTool(
 		"get_spo2",
 		"Pulse Ox (one day)",
-		"SpO2 for one day: average, lowest, sleep average, 7-day average and hourly averages. detail='full' adds every reading and altitude data.",
+		"SpO2 for one day: average, lowest, sleep average, 7-day average and hourly averages, times in local 'YYYY-MM-DD HH:MM'. detail='full' adds every reading and altitude data.",
 		(d) => ({ path: `/wellness-service/wellness/daily/spo2acclimation/${d}` }),
 		compactSpo2,
 	);
@@ -548,7 +560,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_weight",
 		"Weight",
-		"Weight and body composition measurements over a range, from a Garmin smart scale or entered manually in Garmin Connect, returned as Garmin sends them: weights are in grams (74000 = 74 kg). " +
+		"Weight and body composition measurements over a range, from a Garmin smart scale or entered manually in Garmin Connect, returned as Garmin sends them: weights are in grams (74000 = 74 kg); date is the local measurement time, 'YYYY-MM-DD HH:MM'. " +
 			"Often empty, since it needs a smart scale or manual entries. When nothing was recorded in the range, the result holds only previousDateWeight, " +
 			"the last measurement before it: check its calendarDate before treating it as current. " +
 			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date. For longer histories, make several calls.`,
@@ -653,7 +665,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				"List individual recorded activities (runs, rides, swims, strength, etc.) with the activity_id needed for get_activity and get_activity_analysis. " +
 				"Filter by date, type, race, distance, duration, elevation gain, name text or a lat/long box. " +
 				"For totals, averages or trends over weeks/months, use summarize_activities instead: it is far smaller. " +
-				"Default detail='compact' returns key stats only (distance m, duration/movingDuration s, averageSpeed/maxSpeed m/s, HR, elevation, calories, cadence, power, training effect). " +
+				"Default detail='compact' returns key stats only (startTimeLocal as local 'YYYY-MM-DD HH:MM', distance m, duration/movingDuration s, averageSpeed/maxSpeed m/s, HR, elevation, calories, cadence, power, training effect). " +
 				"Use detail='full' only when a field you need is missing, and with a small limit. " +
 				"Sport-specific extras such as golf scorecards, shot data or dive logs are NOT available.",
 			inputSchema: z.object({
@@ -790,7 +802,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 			annotations: { ...READ_ONLY, title: "Activity workouts" },
 		},
 		({ activity_id }) =>
-			run(() => garmin().get(`${ACTIVITY(activity_id)}/workouts`)),
+			run(async () => localizeTimes(await garmin().get(`${ACTIVITY(activity_id)}/workouts`), undefined, await userTimeZone())),
 	);
 
 	server.registerTool(
@@ -803,7 +815,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				"splits: one row per km/mile (time, pace, cumulative time, avg/max HR, cadence, power, elevation gain/loss), timer time so pauses don't count, final partial split labelled with its distance. " +
 				"laps: the watch's own laps with intensity (warmup/active/cooldown/rest) and trigger (manual, distance, ...). " +
 				"best_efforts: fastest continuous 1 km, 1 mile, 5 km, 10 km, half and marathon the activity is long enough for, with where each started. " +
-				"hr_zones: time in each of the user's HR zones. drift: first vs second half pace, HR and aerobic decoupling. " +
+				"hr_zones: time in each HR zone, as the watch recorded it with the zones in effect then (matches Garmin Connect and summarize_activities). drift: first vs second half pace, HR and aerobic decoupling. " +
 				"Get the ID from search_activities. Manual entries and GPX/TCX imports return a short 'unavailable' note.",
 			inputSchema: activityId.extend({
 				include: z
@@ -829,7 +841,8 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				const resolvedUnit: Unit = unit ?? (typeof system === "string" && system.startsWith("statute") ? "mile" : "km");
 				let zones: HrZones | undefined;
 				let zonesUnavailable: string | undefined;
-				if (include.includes("hr_zones") && a.hasHr) {
+				// Current zones are only needed when the FIT file didn't record its own.
+				if (include.includes("hr_zones") && a.hasHr && !a.recordedZones) {
 					try {
 						zones = zonesFromApi(
 							await g.get("/biometric-service/heartRateZones/v2", undefined, { cacheTtl: 86_400 }),
@@ -876,7 +889,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 					g.get(`/periodichealth-service/menstrualcycle/summary/${date}`),
 					g.get(`/periodichealth-service/menstrualcycle/dayview/${date}`, { reducedResponse: "true" }),
 				]);
-				return { summary, dayView };
+				return localizeTimes({ summary, dayView }, undefined, await userTimeZone());
 			}),
 	);
 

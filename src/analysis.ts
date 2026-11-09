@@ -14,7 +14,7 @@ import { decodeFit, type FitActivity, FitError, type FitRecord, isFit, unzip } f
 import { round } from "./util.ts";
 
 /** Bump when analysis output changes, so cached results are recomputed. */
-export const ANALYSIS_VERSION = 1;
+export const ANALYSIS_VERSION = 2;
 
 export const KM = 1000;
 export const MILE = 1609.344;
@@ -253,6 +253,12 @@ export interface Analysis {
 	bestEfforts?: Effort[];
 	/** [bpm, timer seconds] pairs, for time in zones under any zone scheme. */
 	hrHistogram: [number, number][];
+	/**
+	 * The watch's own time in HR zones, with the zones in effect when it was
+	 * recorded (FIT time_in_zone): seconds below zone 1, then zones 1-5, with
+	 * time above max HR counted in zone 5 as Garmin Connect does.
+	 */
+	recordedZones?: HrZones & { seconds: [number, number, number, number, number, number] };
 	drift?: { first: Half; second: Half };
 	/** True when laps include warm-up, cool-down, rest or recovery. */
 	structured: boolean;
@@ -383,6 +389,7 @@ export function analyzeActivity(fit: FitActivity): Analysis {
 			})
 		: undefined;
 
+	const zones = recordedZones(fit);
 	return {
 		v: ANALYSIS_VERSION,
 		sport: fit.sport,
@@ -394,8 +401,23 @@ export function analyzeActivity(fit: FitActivity): Analysis {
 		laps,
 		bestEfforts,
 		hrHistogram: hrHistogram(s),
+		...(zones ? { recordedZones: zones } : {}), // omitted, not undefined: the analysis is cached as JSON
 		drift: halves(s),
 		structured: laps.some((l) => ["warmup", "cooldown", "rest", "recovery"].includes(l.intensity ?? "")),
+	};
+}
+
+/** Zones and time in them as the watch recorded them, when the FIT file has the standard 5 zones. */
+function recordedZones(fit: FitActivity): Analysis["recordedZones"] {
+	const tiz = fit.hrTimeInZone;
+	if (!tiz || tiz.hrHighBoundaries.length !== 6) return undefined;
+	const [b0, b1, b2, b3, b4, max] = tiz.hrHighBoundaries as [number, number, number, number, number, number];
+	const [s0, s1, s2, s3, s4, s5, above] = tiz.hrSeconds as [number, number, number, number, number, number, number];
+	return {
+		floors: [b0 + 1, b1 + 1, b2 + 1, b3 + 1, b4 + 1],
+		max,
+		source: "the watch's zones when this activity was recorded (from the FIT file); matches Garmin Connect",
+		seconds: [s0, s1, s2, s3, s4, s5 + above],
 	};
 }
 
@@ -580,15 +602,27 @@ export function formatBestEfforts(a: Analysis, unit: Unit): Record<string, unkno
 	}));
 }
 
-export function formatHrZones(a: Analysis, zones: HrZones): Record<string, unknown> | string {
-	const total = a.hrHistogram.reduce((n, [, t]) => n + t, 0);
-	if (!a.hasHr || total <= 0) return "no heart rate recorded";
-	const secs = [0, 0, 0, 0, 0, 0]; // below zone 1, zones 1-5
-	for (const [bpm, t] of a.hrHistogram) {
-		let z = 0;
-		while (z < 5 && bpm >= zones.floors[z]!) z++;
-		secs[z]! += t;
+/**
+ * Time in HR zones: the watch's own figures when the FIT file has them (they
+ * match Garmin Connect and summarize_activities), else a recount of the HR
+ * samples against `zones` (the user's current zones).
+ */
+export function formatHrZones(a: Analysis, current?: HrZones): Record<string, unknown> | string {
+	if (!a.hasHr) return "no heart rate recorded";
+	const zones = a.recordedZones ?? current;
+	if (!zones) return "no HR zones set in Garmin Connect";
+	let secs: number[];
+	if (a.recordedZones) secs = [...a.recordedZones.seconds];
+	else {
+		secs = [0, 0, 0, 0, 0, 0]; // below zone 1, zones 1-5
+		for (const [bpm, t] of a.hrHistogram) {
+			let z = 0;
+			while (z < 5 && bpm >= zones.floors[z]!) z++;
+			secs[z]! += t;
+		}
 	}
+	const total = secs.reduce((n, t) => n + t, 0);
+	if (total <= 0) return "no heart rate recorded";
 	const rows = secs.map((t, z) => ({
 		zone: z === 0 ? "below 1" : z,
 		bpm:
@@ -657,7 +691,7 @@ export function formatAnalysis(
 				out.best_efforts = formatBestEfforts(a, unit);
 				break;
 			case "hr_zones":
-				if (opts.zones) out.hr_zones = formatHrZones(a, opts.zones);
+				if (a.recordedZones || opts.zones) out.hr_zones = formatHrZones(a, opts.zones);
 				else unavailable.push(`hr_zones: ${opts.zonesUnavailable ?? "no HR zones set in Garmin Connect"}`);
 				break;
 			case "drift":

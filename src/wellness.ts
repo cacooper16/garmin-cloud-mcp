@@ -14,7 +14,7 @@ export type WellnessGroupBy = "week" | "month" | "weekday" | "total";
 /** One merged row per date across daily summary, sleep and HRV. */
 export type DayRow = { date: string; daily?: Raw; sleep?: Raw; hrv?: Raw };
 
-export function joinByDate(daily: Raw[], sleep: Raw[], hrv: Raw[]): DayRow[] {
+export function joinByDate(daily: Raw[], sleep: Raw[], hrv: Raw[], timeZone?: string): DayRow[] {
 	const days = new Map<string, DayRow>();
 	const at = (date: unknown) => {
 		if (typeof date !== "string") return undefined;
@@ -28,7 +28,7 @@ export function joinByDate(daily: Raw[], sleep: Raw[], hrv: Raw[]): DayRow[] {
 	}
 	for (const s of sleep) {
 		const r = at(s.calendarDate);
-		if (r && num(s.sleepTimeSeconds)) r.sleep = compactSleep(s);
+		if (r && num(s.sleepTimeSeconds)) r.sleep = compactSleep(s, timeZone);
 	}
 	for (const h of hrv) {
 		const r = at(h.calendarDate);

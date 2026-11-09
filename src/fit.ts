@@ -57,6 +57,13 @@ export interface FitActivity {
 	laps: FitLap[];
 	events: FitEvent[];
 	session?: { timerTime?: number; distance?: number; startTs?: number };
+	/**
+	 * The watch's own time in HR zones for the session (FIT time_in_zone), with
+	 * the zone boundaries in effect when it was recorded. `hrHighBoundaries[i]`
+	 * is the top bpm of zone i (0 = below zone 1); `hrSeconds` has one more
+	 * entry than the boundaries: the last is time above the top boundary.
+	 */
+	hrTimeInZone?: { hrHighBoundaries: number[]; hrSeconds: number[] };
 }
 
 export class FitError extends Error {
@@ -140,6 +147,7 @@ const MESG_SESSION = 18;
 const MESG_LAP = 19;
 const MESG_RECORD = 20;
 const MESG_EVENT = 21;
+const MESG_TIME_IN_ZONE = 216;
 const FIELD_TIMESTAMP = 253;
 
 const EVENT_TYPES = [
@@ -235,6 +243,42 @@ function readField(v: DataView, at: number, f: FieldDef, little: boolean): numbe
 	}
 }
 
+/** Reads an array field of unsigned integers (uint8/16/32), dropping FIT invalid values. */
+function readUintArray(v: DataView, at: number, f: FieldDef, little: boolean): (number | undefined)[] {
+	const base = f.baseType & 0x1f;
+	const width = base === 0 || base === 2 || base === 10 || base === 13 ? 1 : base === 4 || base === 11 ? 2 : base === 6 || base === 12 ? 4 : 0;
+	if (!width) return [];
+	const out: (number | undefined)[] = [];
+	for (let i = 0; i + width <= f.size; i += width) {
+		const x = width === 1 ? v.getUint8(at + i) : width === 2 ? v.getUint16(at + i, little) : v.getUint32(at + i, little);
+		out.push(x === (width === 1 ? 0xff : width === 2 ? 0xffff : 0xffffffff) ? undefined : x);
+	}
+	return out;
+}
+
+/**
+ * time_in_zone (216): field 0 reference_mesg (18 = session), 2 time_in_hr_zone
+ * (uint32[], ms), 6 hr_zone_high_boundary (uint8[], bpm). Keeps only the
+ * session's (laps have their own). Returns the message's timestamp, if any.
+ */
+function collectTimeInZone(v: DataView, p: number, def: Definition, out: FitActivity): number | undefined {
+	let ts: number | undefined;
+	let ref: number | undefined;
+	let secs: (number | undefined)[] = [];
+	let highs: (number | undefined)[] = [];
+	for (const f of def.fields) {
+		if (f.num === FIELD_TIMESTAMP) ts = readField(v, p, f, def.little);
+		else if (f.num === 0) ref = readField(v, p, f, def.little);
+		else if (f.num === 2) secs = readUintArray(v, p, f, def.little).map((x) => (x === undefined ? undefined : x / 1000));
+		else if (f.num === 6) highs = readUintArray(v, p, f, def.little);
+		p += f.size;
+	}
+	if (ref === MESG_SESSION && highs.length >= 2 && highs.every((h) => h !== undefined) && secs.length === highs.length + 1) {
+		out.hrTimeInZone = { hrHighBoundaries: highs as number[], hrSeconds: secs.map((x) => x ?? 0) };
+	}
+	return ts;
+}
+
 const WANTED: Record<number, Set<number>> = {
 	[MESG_RECORD]: new Set([FIELD_TIMESTAMP, 2, 3, 4, 5, 6, 7, 53, 73, 78]),
 	[MESG_EVENT]: new Set([FIELD_TIMESTAMP, 0, 1]),
@@ -296,6 +340,13 @@ function decodeData(v: DataView, start: number, end: number, out: FitActivity) {
 			const offset = h & 0x1f;
 			ts = (lastTs & ~0x1f) + offset + (offset < (lastTs & 0x1f) ? 0x20 : 0);
 			lastTs = ts;
+		}
+
+		if (def.global === MESG_TIME_IN_ZONE) {
+			const t = collectTimeInZone(v, p, def, out);
+			if (t !== undefined) lastTs = t;
+			p += def.size + def.devSize;
+			continue;
 		}
 
 		const wanted = WANTED[def.global];

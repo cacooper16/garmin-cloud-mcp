@@ -84,8 +84,10 @@ async function outbound(req) {
 					sleepTimeSeconds: 27000,
 					deepSleepSeconds: 5400,
 					sleepScores: { overall: { value: 80, qualifierKey: "GOOD" } },
-					sleepStartTimestampGMT: "x",
-					sleepStartTimestampLocal: "y",
+					// Real shape: epoch ms, *Local being wall-clock time encoded as if UTC.
+					// In bed at 23:00 the night before, for a UTC+1 user.
+					sleepStartTimestampGMT: Date.parse(`${d}T00:00:00Z`) - 2 * 3600_000,
+					sleepStartTimestampLocal: Date.parse(`${d}T00:00:00Z`) - 3600_000,
 				})),
 			);
 		}
@@ -438,7 +440,7 @@ try {
 		assert.deepEqual(nights[0], {
 			date: "2026-06-01",
 			dow: "mon",
-			start_local: "y",
+			start_local: "2026-05-31 23:00",
 			sleep_h: 7.5,
 			deep_h: 1.5,
 			score: 80,
@@ -501,7 +503,6 @@ try {
 	});
 
 	await step("named periods resolve in the user's Garmin time zone", async () => {
-		const before = garminCalls.length;
 		const { json } = await mcp(
 			accessToken,
 			"tools/call",
@@ -515,7 +516,9 @@ try {
 		const d = new Date(`${kiri}T00:00:00Z`);
 		d.setUTCDate(d.getUTCDate() - 1);
 		assert.equal(rows[0].date, d.toISOString().slice(0, 10));
-		assert.ok(garminCalls.slice(before).some((c) => c.startsWith("/userprofile-service/userprofile/settings")));
+		// The zone comes from the profile settings (fetched once per session, and
+		// possibly already by an earlier tool that formats local times).
+		assert.ok(garminCalls.some((c) => c.startsWith("/userprofile-service/userprofile/settings")));
 	});
 
 	await step("summary tools read a bare start_date as 'since', ending today in the user's time zone", async () => {

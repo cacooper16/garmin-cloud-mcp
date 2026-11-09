@@ -7,6 +7,7 @@
 
 import { WEEK_ORDER, weekday, weekStart } from "./periods.ts";
 import { addDays } from "./ranges.ts";
+import { localStamp } from "./times.ts";
 import { num, paceFrom, type Raw, round, typeKeyOf } from "./util.ts";
 
 /** Fields kept in compact mode. Units are Garmin's: metres, seconds, m/s. */
@@ -38,6 +39,7 @@ export function compactActivity(a: Raw): Raw {
 		const v = a[f];
 		if (v !== null && v !== undefined && v !== "") out[f] = v;
 	}
+	if (out.startTimeLocal !== undefined) out.startTimeLocal = localStamp(out.startTimeLocal) ?? out.startTimeLocal;
 	const type = typeKeyOf(a, "activityType");
 	if (type) out.type = type;
 	const event = typeKeyOf(a, "eventType");

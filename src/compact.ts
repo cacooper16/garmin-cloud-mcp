@@ -6,9 +6,12 @@
  */
 
 import { weekday } from "./periods.ts";
+import { chooseOffsetMs, localFromPair, localStamp, localizeTimes, recordOffsetMs } from "./times.ts";
 import { isObj, num, paceFrom, type Raw, round, typeKeyOf } from "./util.ts";
 
-const NOISE_KEYS = /^(userProfilePk|userProfilePK|userProfileId|userId|ownerId|uuid|activityUuid|activityUUID|deviceId|ownerProfileImageUrl\w*|ownerDisplayName|ownerFullName)$/;
+// createTimeStamp: when Garmin created a record (e.g. the HRV summary), zone
+// unstated; not a time anything happened to the user, so it's only confusing.
+const NOISE_KEYS = /^(userProfilePk|userProfilePK|userProfileId|userId|ownerId|uuid|activityUuid|activityUUID|deviceId|ownerProfileImageUrl\w*|ownerDisplayName|ownerFullName|createTimeStamp)$/;
 
 /**
  * Generic cleanup applied to every tool result: drops null/empty object
@@ -87,8 +90,11 @@ export function dailySummaryRows(payload: unknown): Raw[] {
 
 // ---- sleep --------------------------------------------------------------
 
-/** One night from DailySleepDTO, durations in hours. */
-export function compactSleep(s: Raw): Raw {
+/**
+ * One night from DailySleepDTO, durations in hours. `timeZone` is the user's
+ * Garmin profile zone, used for start/end (see chooseOffsetMs).
+ */
+export function compactSleep(s: Raw, timeZone?: string): Raw {
 	const scores = isObj(s.sleepScores) ? s.sleepScores : {};
 	const overall = isObj(scores.overall) ? scores.overall : {};
 	const factors: Raw = {};
@@ -109,8 +115,8 @@ export function compactSleep(s: Raw): Raw {
 	return defined({
 		date: s.calendarDate,
 		dow: typeof s.calendarDate === "string" ? weekday(s.calendarDate) : undefined,
-		start_local: s.sleepStartTimestampLocal ?? undefined,
-		end_local: s.sleepEndTimestampLocal ?? undefined,
+		start_local: localFromPair(s.sleepStartTimestampGMT, s.sleepStartTimestampLocal, timeZone),
+		end_local: localFromPair(s.sleepEndTimestampGMT, s.sleepEndTimestampLocal, timeZone),
 		sleep_h: hours(s.sleepTimeSeconds),
 		deep_h: hours(s.deepSleepSeconds),
 		light_h: hours(s.lightSleepSeconds),
@@ -151,35 +157,37 @@ function column(descriptors: unknown, match: RegExp, fallback: number): number {
 	if (Array.isArray(descriptors)) {
 		for (const d of descriptors) {
 			if (!isObj(d)) continue;
-			const key = d.key ?? d.bodyBatteryValueDescriptorKey;
-			const index = d.index ?? d.bodyBatteryValueDescriptorIndex;
+			const key = d.key ?? d.bodyBatteryValueDescriptorKey ?? d.spo2ValueDescKey;
+			const index = d.index ?? d.bodyBatteryValueDescriptorIndex ?? d.spo2ValueDescIndex;
 			if (typeof key === "string" && match.test(key) && typeof index === "number") return index;
 		}
 	}
 	return fallback;
 }
 
-/** "HH:MM" local time from a GMT epoch in ms and a local offset. */
-const hhmm = (ms: number, offsetMs: number) => new Date(ms + offsetMs).toISOString().slice(11, 16);
+/** "HH:MM" local time for a GMT epoch in ms, given the record's offset and the profile zone. */
+const hhmm = (ms: number, offsetMs: number | undefined, timeZone: string | undefined) =>
+	new Date(ms + chooseOffsetMs(ms, offsetMs, timeZone)).toISOString().slice(11, 16);
 
 /**
  * One day's Body Battery report. The Personal API only carries a handful of
  * key readings per day (midnight, the overnight peak, a few daytime points,
  * the last reading), so they're returned as-is in local time with min/max.
  */
-export function compactBodyBattery(r: Raw): Raw {
+export function compactBodyBattery(r: Raw, timeZone?: string): Raw {
 	const rows = (Array.isArray(r.bodyBatteryValuesArray) ? (r.bodyBatteryValuesArray as unknown[]) : []).filter(Array.isArray);
 	const lvl = column(r.bodyBatteryValueDescriptorDTOList, /level/i, rows[0]?.length === 2 ? 1 : 2);
 	const ts = column(r.bodyBatteryValueDescriptorDTOList, /timestamp/i, 0);
-	const off = localOffsetMs(r);
+	const off = recordOffsetMs(r);
 	const readings = rows.flatMap((row) => {
 		const t = num(row[ts]);
 		const v = num(row[lvl]);
-		return v === undefined ? [] : [{ time: t !== undefined && t > 1e11 ? hhmm(t, off) : undefined, level: v }];
+		return v === undefined ? [] : [{ time: t !== undefined && t > 1e11 ? hhmm(t, off, timeZone) : undefined, level: v }];
 	});
 	const levels = readings.map((x) => x.level);
+	// Event and feedback times come as GMT only; each event carries its own offset.
 	const events = Array.isArray(r.bodyBatteryActivityEvent)
-		? (r.bodyBatteryActivityEvent as unknown[]).filter(isObj).map((e) => stripNoise(e))
+		? (r.bodyBatteryActivityEvent as unknown[]).filter(isObj).map((e) => stripNoise(localizeTimes(e, off, timeZone)))
 		: undefined;
 	return defined({
 		date: r.date,
@@ -189,19 +197,11 @@ export function compactBodyBattery(r: Raw): Raw {
 		lowest: levels.length ? Math.min(...levels) : undefined,
 		readings_local: readings.length ? readings.map((x) => defined({ ...x })) : undefined,
 		events: events?.length ? events : undefined,
-		feedback: stripNoise(r.endOfDayBodyBatteryDynamicFeedbackEvent ?? r.bodyBatteryDynamicFeedbackEvent) ?? undefined,
+		feedback: stripNoise(localizeTimes(r.endOfDayBodyBatteryDynamicFeedbackEvent ?? r.bodyBatteryDynamicFeedbackEvent, off, timeZone)) ?? undefined,
 	});
 }
 
 // ---- intraday heart rate and SpO2 --------------------------------------
-
-/** Offset to add to a GMT epoch (ms) to get local wall-clock time. */
-function localOffsetMs(d: Raw): number {
-	const parse = (v: unknown) =>
-		typeof v === "number" ? v : typeof v === "string" ? Date.parse(/Z|[+-]\d\d:?\d\d$/.test(v) ? v : `${v}Z`) : NaN;
-	const off = parse(d.startTimestampLocal) - parse(d.startTimestampGMT);
-	return Number.isFinite(off) ? off : 0;
-}
 
 /** A local time-of-day window, "HH:MM" inclusive at both ends. */
 export type TimeWindow = { from?: string; to?: string };
@@ -211,11 +211,11 @@ export type TimeWindow = { from?: string; to?: string };
  * local time, keeping the day's resting/min/max and 7-day resting average.
  * With a window, every reading inside it is returned too.
  */
-export function compactHeartRate(d: Raw, window?: TimeWindow): Raw {
+export function compactHeartRate(d: Raw, window?: TimeWindow, timeZone?: string): Raw {
 	const rows = Array.isArray(d.heartRateValues) ? (d.heartRateValues as unknown[][]) : [];
 	const ts = column(d.heartRateValueDescriptors, /time/i, 0);
 	const hr = column(d.heartRateValueDescriptors, /heart|rate|value/i, 1);
-	const off = localOffsetMs(d);
+	const off = recordOffsetMs(d);
 	const buckets = new Map<string, number[]>();
 	const inWindow: [string, number][] = [];
 	const from = window?.from ?? "00:00";
@@ -225,7 +225,7 @@ export function compactHeartRate(d: Raw, window?: TimeWindow): Raw {
 		const t = num(row[ts]);
 		const v = num(row[hr]);
 		if (t === undefined || v === undefined || v <= 0) continue;
-		const time = hhmm(t, off);
+		const time = hhmm(t, off, timeZone);
 		if (window && time >= from && time <= to) inWindow.push([time, v]);
 		const hour = time.slice(0, 2);
 		let b = buckets.get(hour);
@@ -252,8 +252,11 @@ export function compactHeartRate(d: Raw, window?: TimeWindow): Raw {
 	});
 }
 
-/** SpO2 day: keeps averages and the hourly series, drops per-reading and altitude series. */
-export function compactSpo2(d: Raw): Raw {
+/**
+ * SpO2 day: keeps averages and the hourly series, drops per-reading and
+ * altitude series. Hourly rows lead with a GMT epoch, returned as local time.
+ */
+export function compactSpo2(d: Raw, timeZone?: string): Raw {
 	const {
 		spO2SingleValues: _a,
 		spO2SingleValuesDescriptorList: _b,
@@ -261,7 +264,15 @@ export function compactSpo2(d: Raw): Raw {
 		monitoringEnvironmentValuesDescriptorList: _d,
 		...rest
 	} = d;
-	return stripNoise(rest) as Raw;
+	const off = recordOffsetMs(d);
+	const ts = column(d.spO2HourlyAveragesDescriptorList, /timestamp/i, 0);
+	if (Array.isArray(rest.spO2HourlyAverages)) {
+		rest.spO2HourlyAverages = (rest.spO2HourlyAverages as unknown[]).map((row) => {
+			const t = Array.isArray(row) ? row[ts] : undefined;
+			return typeof t === "number" ? (row as unknown[]).map((x, i) => (i === ts ? (localStamp(t + chooseOffsetMs(t, off, timeZone)) ?? x) : x)) : row;
+		});
+	}
+	return stripNoise(localizeTimes(rest, off, timeZone)) as Raw;
 }
 
 // ---- activity detail ----------------------------------------------------
@@ -346,6 +357,7 @@ export function compactActivityDetail(a: Raw): Raw {
 		description: a.description,
 	};
 	for (const f of DETAIL_FIELDS) out[f] = sum[f];
+	out.startTimeLocal = localStamp(sum.startTimeLocal) ?? sum.startTimeLocal;
 	const speed = num(sum.averageMovingSpeed) ?? num(sum.averageSpeed);
 	if (type !== "swimming" && type !== "lap_swimming" && type !== "open_water_swimming") {
 		out.pace_per_km = paceFrom(speed, 1000);

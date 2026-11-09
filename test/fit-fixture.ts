@@ -39,6 +39,12 @@ export interface SynthActivity {
 	compressTimestamps?: boolean;
 	/** Write record definitions big-endian. */
 	bigEndian?: boolean;
+	/**
+	 * time_in_zone messages (216): `highs` are the zone high boundaries in bpm,
+	 * `seconds` the time in each zone (one more entry than `highs`). `ref` is
+	 * the referenced message: 18 session (default), 19 lap.
+	 */
+	timeInZone?: { highs: number[]; seconds: number[]; ref?: number }[];
 }
 
 // base types
@@ -158,6 +164,24 @@ export function buildFit(a: SynthActivity): Uint8Array {
 		];
 		define(4, 19, lapFields(a.laps[0]!));
 		for (const l of a.laps) data(4, lapFields(l));
+	}
+
+	if (a.timeInZone?.length) {
+		// Array fields, so written by hand: reference_mesg, time_in_hr_zone (ms), hr_zone_high_boundary.
+		for (const z of a.timeInZone) {
+			w.u8(0x40 | 5);
+			w.u8(0);
+			w.u8(0);
+			w.uint(216, 2, true);
+			w.u8(3);
+			w.u8(0), w.u8(2), w.u8(UINT16);
+			w.u8(2), w.u8(4 * z.seconds.length), w.u8(UINT32);
+			w.u8(6), w.u8(z.highs.length), w.u8(UINT8);
+			w.u8(5);
+			w.uint(z.ref ?? 18, 2, true);
+			for (const s of z.seconds) w.uint(Math.round(s * 1000), 4, true);
+			for (const h of z.highs) w.u8(h);
+		}
 	}
 
 	const header = new Writer();

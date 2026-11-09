@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1350" height="1350" viewBox="0 0 1350 1350" fill="none">
+	<!-- Source for icon.png. Regenerate the PNG (512x512) after editing. Transparent background, ~6% padding. -->
+	<defs>
+		<linearGradient id="bubble-fill" x1="144" y1="135" x2="1224" y2="1012.52" gradientUnits="userSpaceOnUse">
+			<stop stop-color="#76A0FF"/>
+			<stop offset="0.5" stop-color="#8A82FF"/>
+			<stop offset="1" stop-color="#FF788A"/>
+		</linearGradient>
+	</defs>
+	<g transform="translate(675 675) scale(1.0970) translate(-684 -676.5)">
+		<!-- Speech bubble, same shape as icon.svg, tail at the bottom left. -->
+		<path d="M573.68 1149.42L493.945 1205.74C478.547 1216.71 458.297 1217.97 441.422 1209.32C424.547 1200.68 414 1183.38 414 1164.39V1012.52H346.5C234.703 1012.52 144 921.811 144 810.012V337.504C144 225.705 234.703 135 346.5 135H1021.5C1133.3 135 1224 225.705 1224 337.504V810.012C1224 921.811 1133.3 1012.52 1021.5 1012.52H767.531L573.68 1149.42Z" fill="url(#bubble-fill)"/>
+		<!-- Heart-rate line, same points as icon.svg. -->
+		<path d="M395 622.081H544.032L607.258 527.297L688.548 762L774.355 428L851.129 622.081H955" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+	</g>
+</svg>

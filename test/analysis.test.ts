@@ -240,6 +240,58 @@ describe("HR zones", () => {
 	});
 });
 
+describe("HR zones recorded by the watch (FIT time_in_zone)", () => {
+	// Zones from a real run's FIT file: high boundaries per zone (0 = below zone 1) and max HR.
+	const highs = [116, 141, 157, 163, 179, 197];
+	// Seconds below zone 1, in zones 1-5, and above max HR (the real 21 km run, rounded).
+	const seconds = [0, 0, 258, 318, 1806, 3972, 312];
+	const run = (timeInZone: { highs: number[]; seconds: number[]; ref?: number }[]) =>
+		analyzeActivity(decodeFit(buildFit({ records: steadyRun(600, 3).map((r) => ({ ...r, hr: 150 })), timeInZone })));
+
+	it("decodes the session's zones and times, folding time above max into zone 5", () => {
+		const a = run([{ highs, seconds }]);
+		assert.deepEqual(a.recordedZones?.floors, [117, 142, 158, 164, 180]);
+		assert.equal(a.recordedZones?.max, 197);
+		assert.deepEqual(a.recordedZones?.seconds, [0, 0, 258, 318, 1806, 3972 + 312]);
+	});
+
+	it("reports the watch's figures, not a recount against the current zones", () => {
+		const a = run([{ highs, seconds }]);
+		// Current API zones differ by 1 bpm; the watch's figures win.
+		const current = zonesFromApi([{ sport: "DEFAULT", zone1Floor: 117, zone2Floor: 143, zone3Floor: 159, zone4Floor: 165, zone5Floor: 181, maxHeartRateUsed: 199 }], "running");
+		const out = formatHrZones(a, current) as { zones_source: string; zones: { zone: unknown; bpm: string; minutes: number }[] };
+		assert.match(out.zones_source, /when this activity was recorded/);
+		assert.deepEqual(
+			out.zones.map((z) => [z.zone, z.bpm, z.minutes]),
+			[
+				[1, "117-141", 0],
+				[2, "142-157", 4.3],
+				[3, "158-163", 5.3],
+				[4, "164-179", 30.1],
+				[5, "180-197", 71.4],
+			],
+		);
+		// No current zones needed at all.
+		const full = formatAnalysis(a, { unit: "km", include: ["hr_zones"] }) as Record<string, any>;
+		assert.equal(full.hr_zones.zones.length, 5);
+		assert.equal(full.unavailable, undefined);
+	});
+
+	it("ignores a lap's time_in_zone and falls back to the current zones", () => {
+		const a = run([{ highs, seconds, ref: 19 }]);
+		assert.equal(a.recordedZones, undefined);
+		assert.ok(a.hrHistogram.length > 0);
+	});
+
+	it("prefers the session entry when laps come first", () => {
+		const a = run([
+			{ highs, seconds: [1, 1, 1, 1, 1, 1, 1], ref: 19 },
+			{ highs, seconds },
+		]);
+		assert.deepEqual(a.recordedZones?.seconds, [0, 0, 258, 318, 1806, 4284]);
+	});
+});
+
 describe("analysis output", () => {
 	const fit = buildFit({
 		records: [...steadyRun(1200, 3), ...steadyRun(1200, 2.5, 1201, 3603)],

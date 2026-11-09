@@ -1,0 +1,99 @@
+name: Release
+
+# Runs when a GitHub release is published (tag vX.Y.Z). Publishes to npm and
+# the MCP Registry, then attaches the Claude Desktop extension to the release.
+# Each step stops the job on failure, so nothing later runs after a failure.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write # gh release upload
+  id-token: write # npm trusted publishing and MCP Registry login (OIDC)
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      # Pinned on purpose (the registry docs advise against releases/latest).
+      # Bump it deliberately; the download's signature is checked below.
+      MCP_PUBLISHER_VERSION: v1.8.8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # npm trusted publishing needs npm 11.5.1 or newer.
+      - run: npm i -g npm@latest
+
+      - name: Check the tag matches every version
+        run: |
+          set -euo pipefail
+          want="${TAG#v}"
+          fail=0
+          check() {
+            if [ "$2" != "$want" ]; then
+              echo "::error::$1 is $2, but the release tag is $TAG"
+              fail=1
+            fi
+          }
+          check package.json "$(jq -r .version package.json)"
+          check "server.json version" "$(jq -r .version server.json)"
+          check "server.json packages[0].version" "$(jq -r '.packages[0].version' server.json)"
+          check mcpb/manifest.json "$(jq -r .version mcpb/manifest.json)"
+          check src/server.ts "$(sed -n 's/^export const SERVER_VERSION = "\(.*\)";$/\1/p' src/server.ts)"
+          exit $fail
+
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+
+      # No NPM_TOKEN: npm trusted publishing authenticates with the OIDC token.
+      # Skipped if this version is already on npm, so a re-run can finish the
+      # later steps.
+      - name: Publish to npm
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          if [ "$(npm view "garmin-mcp@$version" version 2>/dev/null || true)" = "$version" ]; then
+            echo "garmin-mcp@$version is already on npm; skipping."
+          else
+            npm publish --provenance --access public
+          fi
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+          rm "$archive" "$archive.sigstore.json"
+
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+      - name: Attach the Claude Desktop extension
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm run build:mcpb
+          gh release upload "$TAG" garmin-mcp.mcpb --clobber

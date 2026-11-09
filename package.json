@@ -1,6 +1,6 @@
 {
 	"name": "garmin-mcp",
-	"version": "1.2.1",
+	"version": "1.3.0",
 	"mcpName": "io.github.colincooperio/garmin-mcp",
 	"description": "Ask Claude, ChatGPT or any AI assistant about your Garmin training, sleep and recovery. Uses Garmin's official Personal API: no password, read-only. Run locally with npx or self-host on Cloudflare.",
 	"license": "MIT",
@@ -41,7 +41,8 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"build": "npm run types && tsc -p tsconfig.build.json",
-		"check": "npm run types && tsc --noEmit && npm test && npm run test:e2e",
+		"build:mcpb": "esbuild src/stdio.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcpb/server/index.js --log-level=warning && mcpb pack mcpb garmin-mcp.mcpb",
+		"check": "npm run types && tsc --noEmit && mcpb validate mcpb/manifest.json && npm test && npm run test:e2e",
 		"deploy": "npm run check && wrangler deploy",
 		"tail": "wrangler tail",
 		"stdio": "node --experimental-strip-types --no-warnings src/stdio.ts",
@@ -57,9 +58,11 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
+		"@anthropic-ai/mcpb": "^2.1.2",
 		"@cloudflare/workers-oauth-provider": "^1.2.4",
 		"@types/node": "^24.0.0",
 		"agents": "^0.29.0",
+		"esbuild": "^0.28.2",
 		"hono": "^4.12.27",
 		"miniflare": "^4.20260730.0",
 		"typescript": "6.0.3",

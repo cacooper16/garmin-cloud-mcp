@@ -1,0 +1,116 @@
+{
+	"manifest_version": "0.3",
+	"name": "garmin-mcp",
+	"display_name": "Garmin MCP",
+	"version": "1.3.0",
+	"description": "Ask Claude about your Garmin training, sleep and recovery. Uses Garmin's official Personal API: no password, read-only.",
+	"long_description": "Ask Claude about your training, sleep and recovery, using your own Garmin data. It gives Claude read-only access to your Garmin Connect data through Garmin's official Personal API, using an API key you can revoke at any time instead of your Garmin password, and data goes straight from Garmin to your computer. To get a key, open Garmin Connect > Settings > Personal API Token and create one. Not affiliated with or endorsed by Garmin; \"Garmin\" and \"Garmin Connect\" are trademarks of Garmin Ltd. or its subsidiaries.",
+	"author": {
+		"name": "Colin Cooper",
+		"url": "https://colincooper.io"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/colincooperio/garmin-mcp"
+	},
+	"homepage": "https://github.com/colincooperio/garmin-mcp",
+	"documentation": "https://github.com/colincooperio/garmin-mcp#readme",
+	"support": "https://github.com/colincooperio/garmin-mcp/issues",
+	"icon": "icon.png",
+	"server": {
+		"type": "node",
+		"entry_point": "server/index.js",
+		"mcp_config": {
+			"command": "node",
+			"args": ["${__dirname}/server/index.js"],
+			"env": {
+				"GARMIN_API_KEY": "${user_config.garmin_api_key}"
+			}
+		}
+	},
+	"user_config": {
+		"garmin_api_key": {
+			"type": "string",
+			"title": "Garmin Personal API key",
+			"description": "Create one in Garmin Connect > Settings > Personal API Token. Pick 1 year.",
+			"sensitive": true,
+			"required": true
+		}
+	},
+	"tools": [
+		{ "name": "get_readiness", "description": "Best first call for 'how recovered am I', 'should I train hard today', 'how did I sleep last night'." },
+		{ "name": "summarize_wellness", "description": "Best tool for wellness trends over weeks or months ('has my sleep improved', 'resting HR trend this year', 'stress lately')." },
+		{ "name": "get_daily_summaries", "description": "One flat row per day: steps, distance, floors, calories, resting/min/max HR, intensity minutes, stress, Body Battery, respiration, SpO2, hydration." },
+		{ "name": "get_profile", "description": "User profile settings (units, measurement system, birth year, etc.) and heart-rate zones." },
+		{ "name": "get_sleep_summaries", "description": "Night-by-night sleep over a range, one compact row per night filed under the date the user woke up." },
+		{ "name": "get_sleep", "description": "One night's sleep, same compact shape as get_sleep_summaries." },
+		{ "name": "get_hrv_summaries", "description": "Daily heart rate variability over a range: overnight average, 5-minute high, 7-day average, baseline band, status." },
+		{ "name": "get_hrv", "description": "HRV summary plus individual readings for one night." },
+		{ "name": "get_body_battery", "description": "Daily Body Battery (Garmin's 0-100 energy estimate) over a range, one compact row per day." },
+		{ "name": "get_stress", "description": "Day-by-day all-day stress over a range, one row per day as Garmin returns it." },
+		{ "name": "get_heart_rate", "description": "Heart rate for one day: resting, min, max, 7-day resting average, and hourly min/avg/max in local time." },
+		{ "name": "get_steps", "description": "Day-by-day steps over a range, one row per day as Garmin returns it." },
+		{ "name": "get_wellness_activity_summaries", "description": "Garmin's wellness activity summaries over a range: all-day movement records kept apart from recorded workouts." },
+		{ "name": "get_spo2", "description": "SpO2 for one day: average, lowest, sleep average, 7-day average and hourly averages." },
+		{ "name": "get_fitness_age", "description": "Garmin's fitness age as of a date, plus the components behind it." },
+		{ "name": "get_weight", "description": "Weight and body composition measurements over a range, from a Garmin smart scale or entered manually in Garmin Connect." },
+		{ "name": "get_hydration", "description": "Water intake the user logged in Garmin Connect, day by day over a range." },
+		{ "name": "search_activities", "description": "List individual recorded activities (runs, rides, swims, strength, etc.) with the activity_id needed for get_activity and get_activity_analysis." },
+		{ "name": "summarize_activities", "description": "Best tool for activity totals and trends (e.g. 'how far did I run each month', 'has my pace improved')." },
+		{ "name": "get_activity", "description": "One activity in detail: distance, times, pace, speed, HR, cadence, running dynamics, power, training effect and load, temperature, RPE/feel and split summaries." },
+		{ "name": "compare_activities", "description": "Side-by-side compact detail for 2-5 activities (same fields as get_activity), fetched in parallel." },
+		{ "name": "get_activity_workouts", "description": "The planned workout linked to one recorded activity, if any." },
+		{ "name": "get_activity_analysis", "description": "Per-km or per-mile splits, the watch's laps / workout reps, best efforts, time in HR zones and first-vs-second-half drift for one recorded activity, computed from Garmin's original FIT file." },
+		{ "name": "get_nutrition", "description": "Food log for one day: nutrition goals, calories and nutrients consumed, and per-meal breakdown." },
+		{ "name": "get_weight_goals", "description": "The weight goal the user set in Garmin Connect that was in effect over a range, with its goal range." },
+		{ "name": "get_menstrual_cycle", "description": "Menstrual cycle tracking as of one date: Garmin's cycle summary and day view." }
+	],
+	"prompts": [
+		{
+			"name": "readiness_check",
+			"description": "Recovery check from last night's sleep, HRV, resting HR, Body Battery and recent training load.",
+			"text": "Am I ready to train hard today?"
+		},
+		{
+			"name": "sleep_report",
+			"description": "Sleep duration, stages, score and consistency over a period, with weekday patterns.",
+			"arguments": ["period"],
+			"text": "Give me a sleep report for ${arguments.period}."
+		},
+		{
+			"name": "training_review",
+			"description": "Volume, pace, intensity distribution and load trend for a sport over a period.",
+			"arguments": ["period", "activity_type"],
+			"text": "Review my ${arguments.activity_type} training over ${arguments.period}."
+		},
+		{
+			"name": "weekly_checkin",
+			"description": "This week vs last week: training, sleep, stress and recovery.",
+			"text": "Give me a weekly check-in."
+		},
+		{
+			"name": "compare_recent",
+			"description": "Side-by-side comparison of my most recent sessions of one type.",
+			"arguments": ["activity_type"],
+			"text": "Compare my most recent ${arguments.activity_type} sessions."
+		}
+	],
+	"keywords": [
+		"mcp",
+		"model-context-protocol",
+		"mcp-server",
+		"claude",
+		"garmin",
+		"garmin-connect",
+		"fitness",
+		"health",
+		"personal-api"
+	],
+	"license": "MIT",
+	"compatibility": {
+		"platforms": ["darwin", "win32", "linux"],
+		"runtimes": {
+			"node": ">=20.12.0"
+		}
+	}
+}
