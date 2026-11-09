@@ -1,0 +1,29 @@
+name: Feature idea
+description: Something you'd like to be able to ask about your Garmin data.
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        garmin-mcp can only use what Garmin's Personal API provides. That API doesn't include training status, VO2 max history, personal records, sending workouts to the watch or golf data, so those can't be added. See [Known limits](https://github.com/colincooperio/garmin-mcp#known-limits) in the README.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: The question you wish you could ask
+      placeholder: How has my resting heart rate changed in the weeks before my races?
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today instead
+      description: For example, where in Garmin Connect you look, or what you work out by hand.
+
+  - type: textarea
+    id: api-docs
+    attributes:
+      label: Anything Garmin's API docs say is available for it
+      description: Optional. An endpoint or field name from the Personal API docs helps.

@@ -15,8 +15,8 @@ Open an issue on GitHub and include:
 
 Never paste your Garmin key, bearer tokens or `.dev.vars` into an issue. Found
 a security problem? Report it privately through GitHub's
-**Security → Report a vulnerability** on this repo rather than opening an
-issue.
+[**Security → Report a vulnerability**](https://github.com/colincooperio/garmin-mcp/security/advisories/new)
+on this repo rather than opening an issue. See [SECURITY.md](SECURITY.md).
 
 ## Development
 

@@ -1,0 +1,75 @@
+name: Bug report
+description: Something errored, or came back wrong or missing compared with Garmin Connect.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a security problem? Please don't open an issue. Report it privately through [Security → Report a vulnerability](https://github.com/colincooperio/garmin-mcp/security/advisories/new) instead.
+
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Secrets
+      options:
+        - label: I have not included my Garmin API key, tokens or other secrets in this issue.
+          required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you run it
+      options:
+        - Claude Desktop extension (.mcpb)
+        - npx (Claude Code/Cursor/VS Code/other)
+        - Codex
+        - Gemini CLI
+        - Cloud (Cloudflare)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: app
+    attributes:
+      label: AI app and version
+      placeholder: Claude Desktop 1.2.3
+
+  - type: input
+    id: version
+    attributes:
+      label: garmin-mcp version
+      placeholder: "1.3.0"
+
+  - type: textarea
+    id: asked
+    attributes:
+      label: What you asked
+      description: The prompt you gave your AI app, or the tool you called and its arguments.
+    validations:
+      required: true
+
+  - type: textarea
+    id: result
+    attributes:
+      label: What came back / what went wrong
+      description: The error text, or what looked wrong compared with Garmin Connect.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: detail-full
+    attributes:
+      label: 'Does `detail: "full"` show the missing or wrong field?'
+      description: If it does, the compact view is dropping it. If it doesn't, Garmin probably isn't sending it for your device.
+      options:
+        - "Yes"
+        - "No"
+        - Didn't try
+
+  - type: input
+    id: watch
+    attributes:
+      label: Watch model
+      placeholder: Forerunner 965

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and setup help
+    url: https://github.com/colincooperio/garmin-mcp/discussions
+    about: Ask how to set it up or use it, or share what you're doing with it.
+  - name: Report a security problem
+    url: https://github.com/colincooperio/garmin-mcp/security/advisories/new
+    about: Please report vulnerabilities privately, not in a public issue.
