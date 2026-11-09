@@ -4,8 +4,10 @@
 [![npm](https://img.shields.io/npm/v/garmin-mcp.svg)](https://www.npmjs.com/package/garmin-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An [MCP](https://modelcontextprotocol.io) server that gives your AI assistant
-read-only access to your Garmin Connect data, using Garmin's official
+Ask your AI assistant about your training, sleep and recovery, using your own
+Garmin data. It's an [MCP](https://modelcontextprotocol.io) server that gives
+Claude, ChatGPT and other assistants read-only access to your Garmin Connect
+data through Garmin's official
 [Personal API](https://developer.garmin.com/gc-developer-program/personal/).
 
 Run it whichever way suits you. The tools are identical:

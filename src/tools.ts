@@ -433,8 +433,11 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_sleep_summaries",
 		"Sleep summaries",
-		"Nightly sleep over a range, one row per night: hours of sleep/deep/light/REM/awake, sleep score and factor ratings, insights, HR, stress, respiration (avg/low/high), SpO2, " +
-			"sleep need vs baseline with what drove it (training load, e.g. HIGH_ACWR_AND_CHRONIC, HRV, sleep history, naps) and next night's need.",
+		"Night-by-night sleep over a range, one compact row per night filed under the date the user woke up: start/end in local time; hours of sleep, deep, light, REM and awake (and naps); " +
+			"sleep score with its quality and factor ratings; average HR, stress and respiration (avg/low/high); SpO2 average/lowest; sleep need vs baseline in minutes with what drove it " +
+			"(training load, e.g. HIGH_ACWR_AND_CHRONIC, HRV, sleep history, naps) and next night's need; Garmin's insights. " +
+			"For last night alone use get_readiness or get_sleep; for trends over weeks or months use summarize_wellness. " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date. detail='full' returns Garmin's raw records.`,
 		SLEEP,
 		{ chunkDays: 31, compact: each(compactSleep) },
 	);
@@ -460,7 +463,10 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_body_battery",
 		"Body Battery",
-		"Daily Body Battery over a range: charged, drained, highest, lowest, Garmin's key readings for the day in local time (about 6: midnight, overnight peak, morning, afternoon, last), and the events that moved it (sleep, activities, stress).",
+		"Daily Body Battery (Garmin's 0-100 energy estimate) over a range, one compact row per day: charged, drained, highest and lowest; the key readings the Personal API provides, in local time " +
+			"(about 6 a day: midnight, overnight peak, morning, afternoon, last); the events that moved it (sleep, activities, stress); and Garmin's end-of-day feedback. " +
+			"For today's state use get_readiness; for trends over weeks or months use summarize_wellness (Body Battery high/low per period). " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date. detail='full' returns Garmin's raw report.`,
 		(s, e) => ({
 			path: "/wellness-service/wellness/bodyBattery/reports/daily",
 			params: { startDate: s, endDate: e },
@@ -470,7 +476,10 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_stress",
 		"Stress",
-		"Daily stress over a range: overall level and time in high/medium/low/rest stress (seconds).",
+		"Day-by-day all-day stress over a range, one row per day as Garmin returns it: calendarDate, then values with overallStressLevel (Garmin's 0-100 score) " +
+			"and highStressDuration, mediumStressDuration, lowStressDuration and restStressDuration in seconds. " +
+			"For trends over weeks or months, or 'which weekday am I most stressed', use summarize_wellness (stress per period, group_by='weekday'); stress during sleep is avg_stress in get_sleep_summaries. " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date.`,
 		(s, e) => ({ path: `/usersummary-service/stats/stress/daily/${s}/${e}` }),
 		{ chunkDays: 28 },
 	);
@@ -507,14 +516,18 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_steps",
 		"Steps",
-		"Daily step totals, distance and goals over a range.",
+		"Day-by-day steps over a range, one row per day as Garmin returns it: calendarDate, totalSteps, totalDistance (metres) and stepGoal. " +
+			"get_daily_summaries has the same steps alongside floors, calories, HR and stress; for weekly or monthly averages over longer spans use summarize_wellness. " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date.`,
 		(s, e) => ({ path: `/usersummary-service/stats/steps/daily/${s}/${e}` }),
 		{ chunkDays: 28 },
 	);
 	rangeTool(
 		"get_wellness_activity_summaries",
 		"Wellness activity summaries",
-		"Wellness activity summaries over a range (all-day movement, as opposed to recorded workouts).",
+		"Garmin's wellness activity summaries over a range: all-day movement records kept apart from recorded workouts, returned as Garmin sends them. " +
+			"Often empty; for daily movement use get_daily_summaries or get_steps, and for workouts search_activities or summarize_activities. " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date.`,
 		(s, e) => ({ path: `/wellnessactivity-service/activity/summary/range/${s}/${e}` }),
 	);
 	dayTool(
@@ -527,19 +540,27 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	dayTool(
 		"get_fitness_age",
 		"Fitness age",
-		"Fitness age and the factors behind it, as of a date.",
+		"Garmin's fitness age as of a date: chronologicalAge, fitnessAge (a decimal; round it) and previousFitnessAge, plus the components behind it, " +
+			"each with a value and a stale flag: rhr (resting HR), vigorousDaysAvg and vigorousMinutesAvg (weekly averages over numOfWeeksForIm recent weeks), and bmi with its lastMeasurementDate. " +
+			"BMI comes from the last weight entry, so it is often old. It changes slowly, so date='today' is usually all you need. This is not VO2 max, which the Personal API doesn't provide.",
 		(d) => ({ path: `/fitnessage-service/fitnessage/v2/${d}` }),
 	);
 	rangeTool(
 		"get_weight",
 		"Weight",
-		"All weight and body composition measurements over a range.",
+		"Weight and body composition measurements over a range, from a Garmin smart scale or entered manually in Garmin Connect, returned as Garmin sends them: weights are in grams (74000 = 74 kg). " +
+			"Often empty, since it needs a smart scale or manual entries. When nothing was recorded in the range, the result holds only previousDateWeight, " +
+			"the last measurement before it: check its calendarDate before treating it as current. " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date. For longer histories, make several calls.`,
 		(s, e) => ({ path: `/weight-service/weight/range/${s}/${e}`, params: { includeAll: "true" } }),
 	);
 	rangeTool(
 		"get_hydration",
 		"Hydration",
-		"Daily hydration logs over a range.",
+		"Water intake the user logged in Garmin Connect, day by day over a range, as Garmin returns it. " +
+			"Usually empty: Garmin only records hydration that is logged, so an empty result means nothing was logged, not that the user drank nothing. " +
+			"get_daily_summaries also carries hydration_ml per day. " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date.`,
 		(s, e) => ({ path: `/usersummary-service/stats/hydration/daily/${s}/${e}` }),
 		{ chunkDays: 31 },
 	);
@@ -760,7 +781,11 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 		"get_activity_workouts",
 		{
 			title: "Activity workouts",
-			description: "Structured workouts linked to one activity, if any.",
+			description:
+				"The planned workout linked to one recorded activity, if any: workoutName, sport and steps, each with intensity, durationType/durationValue (metres for DISTANCE) " +
+				"and a target (e.g. targetType SPEED with targetValueLow/High in m/s). An activity started from one of Garmin's daily suggested workouts may carry only a workoutPhrase " +
+				"(e.g. EASY_WEEK_LOAD_BASE); an empty result means no workout was linked. " +
+				"This is the plan; for how each rep actually went use get_activity_analysis (laps). Get the ID from search_activities.",
 			inputSchema: activityId,
 			annotations: { ...READ_ONLY, title: "Activity workouts" },
 		},
@@ -828,7 +853,9 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 	rangeTool(
 		"get_weight_goals",
 		"Weight goals",
-		"The user's effective weight goals and goal ranges over a date range.",
+		"The weight goal the user set in Garmin Connect that was in effect over a range, with its goal range, returned as Garmin sends it. " +
+			"Empty ({}) when no weight goal is set, which is common. Pair with get_weight to track progress. " +
+			`Up to ${MAX_RANGE_DAYS} days per call: pass a period (e.g. last_7_days, last_30_days, this_month) or start_date/end_date.`,
 		(s, e) => ({ path: `/goal-service/goal/user/effective/weightgoal/${s}/${e}` }),
 	);
 	server.registerTool(
@@ -836,7 +863,8 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 		{
 			title: "Menstrual cycle (one day)",
 			description:
-				"Menstrual cycle summary plus that day's logged data (symptoms, flow, mood) and predictions, as of a date.",
+				"Menstrual cycle tracking as of one date, in two parts returned as Garmin sends them: summary (Garmin's cycle summary for that date) and dayView (Garmin's day view for that date, with anything logged). " +
+				"Empty unless the user tracks their cycle in Garmin Connect. date accepts YYYY-MM-DD, 'today' or 'yesterday'; call once per date.",
 			inputSchema: day,
 			annotations: { ...READ_ONLY, title: "Menstrual cycle (one day)" },
 		},

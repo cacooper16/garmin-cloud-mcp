@@ -1,7 +1,8 @@
 {
 	"name": "garmin-mcp",
-	"version": "1.2.0",
-	"description": "MCP server for Garmin's official Personal API. Run it locally with `npx garmin-mcp` and just your Garmin key, or self-host it on Cloudflare behind GitHub OAuth to use it on web, desktop and phone. Read-only. Works with Claude, ChatGPT, Cursor and other MCP clients.",
+	"version": "1.2.1",
+	"mcpName": "io.github.colincooperio/garmin-mcp",
+	"description": "Ask Claude, ChatGPT or any AI assistant about your Garmin training, sleep and recovery. Uses Garmin's official Personal API: no password, read-only. Run locally with npx or self-host on Cloudflare.",
 	"license": "MIT",
 	"type": "module",
 	"repository": {

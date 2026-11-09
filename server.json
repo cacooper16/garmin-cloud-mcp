@@ -1,0 +1,29 @@
+{
+	"$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+	"name": "io.github.colincooperio/garmin-mcp",
+	"description": "Ask your AI assistant about your Garmin training, sleep and recovery data",
+	"repository": {
+		"url": "https://github.com/colincooperio/garmin-mcp",
+		"source": "github"
+	},
+	"version": "1.2.1",
+	"packages": [
+		{
+			"registryType": "npm",
+			"identifier": "garmin-mcp",
+			"version": "1.2.1",
+			"transport": {
+				"type": "stdio"
+			},
+			"environmentVariables": [
+				{
+					"name": "GARMIN_API_KEY",
+					"description": "Your Garmin Personal API key (Garmin Connect > Settings > Personal API Token)",
+					"isRequired": true,
+					"isSecret": true,
+					"format": "string"
+				}
+			]
+		}
+	]
+}
