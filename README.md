@@ -1,6 +1,7 @@
-# garmin-cloud-mcp
+# garmin-mcp
 
-[![CI](https://github.com/cacooper16/garmin-cloud-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/cacooper16/garmin-cloud-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/colincooperio/garmin-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/colincooperio/garmin-mcp/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/garmin-mcp.svg)](https://www.npmjs.com/package/garmin-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An [MCP](https://modelcontextprotocol.io) server that gives your AI assistant
@@ -9,8 +10,8 @@ read-only access to your Garmin Connect data, using Garmin's official
 
 Run it whichever way suits you. The tools are identical:
 
-- **Local.** Runs on your computer, started by your AI app. About two minutes
-  to set up, and all you need is your Garmin key.
+- **Local.** Runs on your computer, started by your AI app. About a minute to
+  set up, and all you need is your Garmin key.
 - **Cloud.** Runs on your own Cloudflare account (the free plan is plenty),
   behind GitHub sign-in. About 20 minutes to set up, and it then works on all
   your devices: web, desktop and phone.
@@ -46,7 +47,7 @@ Here it is in Claude on a phone (cloud version), projecting a 10k time from
 recent runs:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cacooper16/garmin-cloud-mcp/main/docs/demo.gif" width="320" alt="Claude on a phone answering 'how quickly could I run a 10k in April?' from Garmin running data">
+  <img src="https://raw.githubusercontent.com/colincooperio/garmin-mcp/main/docs/demo.gif" width="320" alt="Claude on a phone answering 'how quickly could I run a 10k in April?' from Garmin running data">
 </p>
 
 > Not affiliated with or endorsed by Garmin. "Garmin" and "Garmin Connect" are
@@ -60,7 +61,7 @@ recent runs:
 | Claude and ChatGPT on the web                |       |  ✅   |
 | AI apps on your phone or tablet              |       |  ✅   |
 | Works when your computer is off              |       |  ✅   |
-| Set up in about 2 minutes                    |  ✅   |       |
+| Set up in about 1 minute                     |  ✅   |       |
 | No Cloudflare or GitHub account needed       |  ✅   |       |
 | Garmin key stored only on your computer      |  ✅   |       |
 | Nothing listening on the network             |  ✅   |       |
@@ -73,7 +74,7 @@ recent runs:
 <details>
 <summary><b>I use Claude Desktop or Claude Code on one computer</b></summary>
 
-Go local. You get everything, in two minutes.
+Go local. You get everything, in about a minute.
 
 </details>
 <details>
@@ -122,7 +123,7 @@ Cloudflare secrets. See [Security model](#security-model).
 <details>
 <summary><b>How comfortable with a terminal do I need to be?</b></summary>
 
-Local: you paste three commands and one config snippet. Cloud: about a dozen
+Local: you paste one command or one config snippet. Cloud: about a dozen
 commands, plus a few settings in the Cloudflare and GitHub dashboards.
 
 </details>
@@ -138,35 +139,26 @@ There's no Cloudflare or GitHub setup.
 - A Garmin Personal API key (see
   [Create a Garmin Personal API key](#6-create-a-garmin-personal-api-key))
 
-### Install
-
-```sh
-git clone https://github.com/cacooper16/garmin-cloud-mcp.git
-cd garmin-cloud-mcp
-npm ci --omit=dev
-```
-
 ### Connect your AI app
 
-**Claude Code** (run from the repo folder):
+There's nothing to install separately: your app runs the
+[`garmin-mcp`](https://www.npmjs.com/package/garmin-mcp) package with `npx`.
+
+**Claude Code:**
 
 ```sh
-claude mcp add garmin --env GARMIN_API_KEY=<your key> -- node --experimental-strip-types --no-warnings "$(pwd)/src/stdio.ts"
+claude mcp add garmin --env GARMIN_API_KEY=<your key> -- npx -y garmin-mcp
 ```
 
 **Claude Desktop, Cursor, VS Code and other apps:** add this to the app's MCP
-config, using the full path to your copy of the repo:
+config:
 
 ```json
 {
 	"mcpServers": {
 		"garmin": {
-			"command": "node",
-			"args": [
-				"--experimental-strip-types",
-				"--no-warnings",
-				"/absolute/path/to/garmin-cloud-mcp/src/stdio.ts"
-			],
+			"command": "npx",
+			"args": ["-y", "garmin-mcp"],
 			"env": {
 				"GARMIN_API_KEY": "<your key>"
 			}
@@ -204,8 +196,8 @@ Run all commands from the repo folder.
 ### 1. Install and log in to Cloudflare
 
 ```sh
-git clone https://github.com/cacooper16/garmin-cloud-mcp.git
-cd garmin-cloud-mcp
+git clone https://github.com/colincooperio/garmin-mcp.git
+cd garmin-mcp
 npm install
 npx wrangler login
 cp wrangler.example.jsonc wrangler.jsonc
@@ -411,7 +403,9 @@ Then delete the old key in Garmin Connect.
 
 **Updating.**
 
-- Local: `git pull && npm ci --omit=dev`, then restart your AI app.
+- Local: `npx` fetches the latest version each time your AI app starts the
+  server, so just restart the app. To stay on a fixed version, use
+  `garmin-mcp@1.2.0` in place of `garmin-mcp` in your config.
 - Cloud: `git pull`, then `npm install` and `npm run deploy`. Your
   `wrangler.jsonc` isn't touched by updates. If `wrangler.example.jsonc` gains
   a new setting, copy it across.
@@ -473,10 +467,12 @@ Found a security problem? Please report it privately through GitHub's
 ## Development
 
 ```sh
-npm test           # unit tests, including the stdio server
+npm test           # unit tests, including the stdio server and the npm package
 npm run test:e2e   # the real Worker in Miniflare, full OAuth + MCP flow, GitHub and Garmin faked
 npm run check      # type-check + both of the above; runs before every deploy and in CI
 npm run stdio      # the local stdio server (needs GARMIN_API_KEY in the environment)
+npm run build      # compile the stdio server to dist/ (what's published to npm as garmin-mcp)
+npm run test:pack  # pack, install the tarball in a temp project and run its bin (also part of npm test)
 npm run dev        # the Worker on :8788 (needs .dev.vars, see .dev.vars.example)
 ```
 

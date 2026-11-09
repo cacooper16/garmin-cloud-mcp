@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { after, before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { MemoryKV } from "../src/memory-kv.ts";
+import { StdioClient } from "./stdio-client.ts";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 describe("MemoryKV", () => {
 	it("stores, returns and deletes values", async () => {
@@ -44,85 +48,25 @@ describe("MemoryKV", () => {
 	});
 });
 
-/** Minimal line-delimited JSON-RPC client for the stdio server. */
-class StdioClient {
-	private readonly proc: ChildProcessWithoutNullStreams;
-	private readonly pending = new Map<number, (msg: any) => void>();
-	private buf = "";
-	private nextId = 1;
-	stderr = "";
-
-	constructor() {
-		const root = fileURLToPath(new URL("..", import.meta.url));
-		this.proc = spawn(process.execPath, ["--experimental-strip-types", "--no-warnings", "src/stdio.ts"], {
-			cwd: root,
-			// Only PATH and the key: proves nothing else (Cloudflare, GitHub) is needed.
-			env: { PATH: process.env.PATH ?? "", GARMIN_API_KEY: "dummy" },
-		});
-		this.proc.stdout.setEncoding("utf8");
-		this.proc.stdout.on("data", (chunk: string) => {
-			this.buf += chunk;
-			let nl: number;
-			while ((nl = this.buf.indexOf("\n")) >= 0) {
-				const line = this.buf.slice(0, nl).trim();
-				this.buf = this.buf.slice(nl + 1);
-				if (!line) continue;
-				const msg = JSON.parse(line); // anything non-JSON on stdout is a bug
-				if (typeof msg.id === "number") this.pending.get(msg.id)?.(msg);
-			}
-		});
-		this.proc.stderr.on("data", (c) => (this.stderr += c));
-	}
-
-	request(method: string, params: object = {}): Promise<any> {
-		const id = this.nextId++;
-		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => reject(new Error(`${method} timed out. stderr:\n${this.stderr}`)), 15_000);
-			this.pending.set(id, (msg) => {
-				clearTimeout(timer);
-				this.pending.delete(id);
-				resolve(msg);
-			});
-			this.send({ jsonrpc: "2.0", id, method, params });
-		});
-	}
-
-	notify(method: string, params: object = {}) {
-		this.send({ jsonrpc: "2.0", method, params });
-	}
-
-	private send(msg: object) {
-		this.proc.stdin.write(JSON.stringify(msg) + "\n");
-	}
-
-	close(): Promise<void> {
-		return new Promise((resolve) => {
-			if (this.proc.exitCode !== null) return resolve();
-			this.proc.once("exit", () => resolve());
-			this.proc.stdin.end();
-			setTimeout(() => this.proc.kill(), 2_000).unref();
-		});
-	}
-}
-
 describe("stdio server", () => {
 	let client: StdioClient;
 
 	before(async () => {
-		client = new StdioClient();
+		client = new StdioClient(process.execPath, ["--experimental-strip-types", "--no-warnings", "src/stdio.ts"], root);
 		const init = await client.request("initialize", {
 			protocolVersion: "2025-06-18",
 			capabilities: {},
 			clientInfo: { name: "stdio-test", version: "1.0.0" },
 		});
 		assert.equal(init.result?.serverInfo?.name, "garmin");
+		assert.equal(init.result?.serverInfo?.version, pkg.version);
 		assert.ok(init.result?.instructions?.includes("Garmin"));
 		client.notify("notifications/initialized");
 	});
 
 	after(() => client.close());
 
-	it("lists 25 read-only tools", async () => {
+	it("lists 26 read-only tools", async () => {
 		const res = await client.request("tools/list");
 		const tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] = res.result.tools;
 		assert.equal(tools.length, 26);

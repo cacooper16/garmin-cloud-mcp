@@ -6,6 +6,9 @@ import type { GarminClient } from "./garmin.ts";
 import { registerGarminPrompts } from "./prompts.ts";
 import { registerGarminTools } from "./tools.ts";
 
+/** Reported to clients as serverInfo.version. Must match package.json (test/version.test.ts). */
+export const SERVER_VERSION = "1.2.0";
+
 const INSTRUCTIONS =
 	"Read-only access to the user's own Garmin Connect data. Dates are the user's local calendar dates (YYYY-MM-DD). " +
 	"Pick the smallest tool that answers the question, usually in one call: " +
@@ -27,7 +30,7 @@ const INSTRUCTIONS =
  * tool call, so listing tools and prompts never needs a real API key.
  */
 export function createGarminServer(makeClient: () => GarminClient): McpServer {
-	const server = new McpServer({ name: "garmin", version: "1.1.1" }, { instructions: INSTRUCTIONS });
+	const server = new McpServer({ name: "garmin", version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
 
 	let client: GarminClient | undefined;
 	registerGarminTools(server, () => {

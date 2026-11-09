@@ -1,0 +1,22 @@
+{
+	// Compiles the local stdio server for npm. Only src/stdio.ts and what it
+	// imports are emitted; the Worker (index.ts and its OAuth files) is
+	// bundled by wrangler instead and must not end up in dist/.
+	//
+	// "types" is Node's, not ./worker-configuration.d.ts: wrangler's generated
+	// types reference src/index.ts (mainModule), which would drag the whole
+	// Worker graph into the build. This also type-checks the stdio graph
+	// against the runtime it actually runs on.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": false,
+		"outDir": "dist",
+		"rootDir": "src",
+		"rewriteRelativeImportExtensions": true,
+		"declaration": false,
+		"sourceMap": false,
+		"types": ["node"]
+	},
+	"files": ["src/stdio.ts"],
+	"include": []
+}

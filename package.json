@@ -1,14 +1,25 @@
 {
-	"name": "garmin-cloud-mcp",
-	"version": "1.1.1",
-	"description": "MCP server for Garmin's official Personal API. Run it locally in two minutes with just your Garmin key, or self-host it on Cloudflare behind GitHub OAuth to use it on web, desktop and phone. Read-only. Works with Claude, ChatGPT, Cursor and other MCP clients.",
+	"name": "garmin-mcp",
+	"version": "1.2.0",
+	"description": "MCP server for Garmin's official Personal API. Run it locally with `npx garmin-mcp` and just your Garmin key, or self-host it on Cloudflare behind GitHub OAuth to use it on web, desktop and phone. Read-only. Works with Claude, ChatGPT, Cursor and other MCP clients.",
 	"license": "MIT",
-	"private": true,
 	"type": "module",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cacooper16/garmin-cloud-mcp.git"
+		"url": "git+https://github.com/colincooperio/garmin-mcp.git"
 	},
+	"homepage": "https://github.com/colincooperio/garmin-mcp#readme",
+	"bugs": {
+		"url": "https://github.com/colincooperio/garmin-mcp/issues"
+	},
+	"bin": {
+		"garmin-mcp": "dist/stdio.js"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"keywords": [
 		"mcp",
 		"model-context-protocol",
@@ -19,13 +30,16 @@
 		"garmin-connect",
 		"cloudflare-workers",
 		"fitness",
-		"health"
+		"health",
+		"personal-api",
+		"npx"
 	],
 	"engines": {
 		"node": ">=22"
 	},
 	"scripts": {
 		"dev": "wrangler dev",
+		"build": "npm run types && tsc -p tsconfig.build.json",
 		"check": "npm run types && tsc --noEmit && npm test && npm run test:e2e",
 		"deploy": "npm run check && wrangler deploy",
 		"tail": "wrangler tail",
@@ -33,17 +47,19 @@
 		"types": "wrangler types --config wrangler.example.jsonc",
 		"type-check": "npm run types && tsc --noEmit",
 		"test": "node --experimental-strip-types --test test/*.test.ts",
-		"test:e2e": "wrangler deploy --dry-run --config wrangler.example.jsonc --outdir .wrangler/e2e-dist && node --experimental-strip-types --no-warnings test/e2e.mjs"
+		"test:pack": "node --experimental-strip-types --no-warnings --test test/pack.test.ts",
+		"test:e2e": "wrangler deploy --dry-run --config wrangler.example.jsonc --outdir .wrangler/e2e-dist && node --experimental-strip-types --no-warnings test/e2e.mjs",
+		"prepublishOnly": "npm run check && npm run build"
 	},
 	"dependencies": {
-		"@cloudflare/workers-oauth-provider": "^1.2.4",
 		"@modelcontextprotocol/server": "2.3.1",
-		"agents": "^0.29.0",
-		"hono": "^4.12.27",
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
+		"@cloudflare/workers-oauth-provider": "^1.2.4",
 		"@types/node": "^24.0.0",
+		"agents": "^0.29.0",
+		"hono": "^4.12.27",
 		"miniflare": "^4.20260730.0",
 		"typescript": "6.0.3",
 		"wrangler": "^4.105.0"
