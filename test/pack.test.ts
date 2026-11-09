@@ -17,6 +17,24 @@ function npm(args: string[], cwd: string): string {
 	return execFileSync("npm", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
+/**
+ * The tarball name from `npm pack --json`. npm 11 and earlier print an array
+ * of packed packages; npm 12 prints an object keyed by package name.
+ */
+function packedFilename(json: string): string {
+	const parsed: unknown = JSON.parse(json);
+	const entry = Array.isArray(parsed)
+		? parsed[0]
+		: parsed && typeof parsed === "object"
+			? ((parsed as Record<string, unknown>)[pkg.name] ?? Object.values(parsed)[0])
+			: undefined;
+	const filename = (entry as { filename?: unknown } | undefined)?.filename;
+	if (typeof filename !== "string") {
+		throw new Error(`Unexpected \`npm pack --json\` output (expected an array or an object of packages with .filename): ${json.slice(0, 300)}`);
+	}
+	return filename;
+}
+
 describe("npm package", { timeout: 180_000 }, () => {
 	let tmp: string;
 	let project: string;
@@ -25,8 +43,7 @@ describe("npm package", { timeout: 180_000 }, () => {
 	before(() => {
 		tmp = mkdtempSync(join(tmpdir(), "garmin-mcp-pack-"));
 		npm(["run", "build"], root);
-		const [packed] = JSON.parse(npm(["pack", "--json", "--pack-destination", tmp], root));
-		const tarball = join(tmp, packed.filename);
+		const tarball = join(tmp, packedFilename(npm(["pack", "--json", "--pack-destination", tmp], root)));
 
 		project = join(tmp, "project");
 		execFileSync("mkdir", [project]);

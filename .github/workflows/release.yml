@@ -31,8 +31,10 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # npm trusted publishing needs npm 11.5.1 or newer.
-      - run: npm i -g npm@latest
+      # npm trusted publishing needs npm 11.5.1 or newer. Pinned to a major (not
+      # latest) so a new npm major can't change behaviour under a release; CI uses
+      # the same one.
+      - run: npm i -g npm@11
 
       - name: Check the tag matches every version
         run: |

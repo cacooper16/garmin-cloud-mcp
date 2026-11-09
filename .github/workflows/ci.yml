@@ -17,6 +17,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The npm major releases use (release.yml), so CI catches npm changes first.
+      - run: npm i -g npm@11
       - run: npm ci
       # Type-check, unit tests, and the end-to-end test (real Worker in
       # Miniflare, GitHub and Garmin faked). No Cloudflare account needed.
