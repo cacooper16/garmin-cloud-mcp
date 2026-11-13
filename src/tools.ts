@@ -13,6 +13,7 @@ import {
 	stripNoise,
 } from "./compact.ts";
 import { GarminApiError, type GarminClient } from "./garmin.ts";
+import { CAVEAT, compareByMeasure, MEASURES, pairRuns, sourcesFor } from "./recovery.ts";
 import { type LoadLimits, loadMany, PB_DISTANCES, personalBests, PREDICTION_WINDOW_DAYS, racePredictions } from "./records.ts";
 import { PERIODS, type Period, resolvePeriod, todayIn } from "./periods.ts";
 import { addDays, daysBetween, mapLimit, mergeChunks, splitRange } from "./ranges.ts";
@@ -874,6 +875,76 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 					},
 					source: "computed from your activity files, not Garmin's official records",
 					notes: notes.length ? notes : undefined,
+				};
+			}),
+	);
+
+	server.registerTool(
+		"analyze_recovery_impact",
+		{
+			title: "Recovery vs running performance",
+			description:
+				"Does sleep, HRV or Body Battery relate to how the user runs? Pairs each run with the night before it (sleep score, hours slept, overnight HRV) and that morning's Body Battery, " +
+				"then compares runs after the best third of nights with runs after the worst third at the same heart rate: it fits the user's own speed-for-HR line across the runs " +
+				"and scores each run by how much faster or slower it was than expected for its HR, so easy and hard runs compare fairly. Returns each group's average HR and pace, " +
+				"the difference in s/km (or s/mi) at the same HR, and a correlation, called meaningful only at |r| >= 0.3 with 8+ runs per group. " +
+				"Warns when the groups' average HR differs by over 8 bpm (different kinds of runs). Races, runs under 20 minutes and manual entries are left out. " +
+				"Use for 'does poor sleep hurt my running', 'do I run better when my HRV is high'. Says when there's too little data to conclude; correlation, not proof. " +
+				`Defaults to the last 180 days and running; range up to ${MAX_SUMMARY_RANGE_DAYS} days.`,
+			inputSchema: z.object({
+				period,
+				start_date: isoDate.optional().describe("First day, YYYY-MM-DD, inclusive. Defaults to 180 days ago."),
+				end_date: isoDate.optional().describe("Last day, YYYY-MM-DD, inclusive. Defaults to today."),
+				activity_type: z
+					.string()
+					.regex(/^[a-z_]+$/)
+					.default("running")
+					.describe("Parent type key, e.g. running, cycling, walking."),
+				measure: z
+					.enum([...MEASURES, "all"])
+					.default("all")
+					.describe("Recovery measure to compare by; 'all' does each. Pick one for a faster answer."),
+				unit: z.enum(["km", "mile"]).optional().describe("Pace unit. Defaults to the user's Garmin unit setting."),
+			}),
+			annotations: { ...READ_ONLY, title: "Recovery vs running performance" },
+		},
+		(args) =>
+			run(async () => {
+				const [s, e] =
+					args.period || args.start_date
+						? await resolveDates(args, MAX_SUMMARY_RANGE_DAYS, { openEnd: true })
+						: resolvePeriod("last_180_days", await userToday());
+				const measures = args.measure === "all" ? [...MEASURES] : [args.measure];
+				const want = sourcesFor(measures);
+				const g = garmin();
+				const unavailable: string[] = [];
+				const source = async (name: "daily" | "sleep" | "hrv", path: (s: string, e: string) => Req, chunk: number) => {
+					if (!want.has(name)) return undefined;
+					const r = await settle(name, fetchRange(path, s, e, chunk), unavailable);
+					for (const f of r?.failed ?? []) unavailable.push(`${name} ${f}`);
+					return r?.data;
+				};
+				const [parts, daily, sleep, hrv] = await Promise.all([
+					mapLimit(splitRange(s, e, MAX_RANGE_DAYS), FETCH_CONCURRENCY, ([cs, ce]) =>
+						settle(`activities ${cs}..${ce}`, fetchActivities(g, filterParams({ activity_type: args.activity_type, start_date: cs, end_date: ce })), unavailable),
+					),
+					source("daily", DAILY, 365),
+					source("sleep", SLEEP, 31),
+					source("hrv", HRV, MAX_RANGE_DAYS),
+				]);
+				if (parts.every((p) => p === undefined)) throw new GarminApiError(unavailable.join("; "));
+				const rows = joinByDate(dailySummaryRows(daily), Array.isArray(sleep) ? sleep.filter(isObj) : [], hrvRows(hrv));
+				const { runs, excluded } = pairRuns(parts.flatMap((p) => p?.list ?? []), rows);
+				const unit = await unitFor(args.unit);
+				return {
+					start_date: s,
+					end_date: e,
+					activity_type: args.activity_type,
+					runs_compared: runs.length,
+					excluded: Object.values(excluded).some(Boolean) ? excluded : undefined,
+					results: measures.map((m) => compareByMeasure(runs, m, unit)),
+					caveat: CAVEAT,
+					unavailable: unavailable.length ? unavailable : undefined,
 				};
 			}),
 	);

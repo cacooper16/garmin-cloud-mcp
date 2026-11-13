@@ -18,6 +18,7 @@ const INSTRUCTIONS =
 	"'am I building too fast', load ramp, or comparing one training block with the last -> summarize_activities with group_by 'week' (load_trend: weekly load, % change, acute:chronic ratio, flags); " +
 	"weekday patterns -> group_by 'weekday'; " +
 	"specific workouts, longest or fastest -> search_activities (sort_by), then get_activity for one or compare_activities for 2-5; " +
+	"whether sleep, HRV or Body Battery relate to how the user runs -> analyze_recovery_impact; " +
 	"personal bests / PRs across runs ('my 5k PB', 'fastest half this year') or race time estimates -> get_personal_bests; " +
 	"per-km or per-mile splits, laps or interval reps, fastest 1 km/5 km/10 km within a run, time in HR zones or HR drift for one activity -> get_activity_analysis (get_activity's splitSummaries are only warm-up/active/cool-down totals, not km splits); " +
 	"day-by-day values for a short range -> get_daily_summaries, get_sleep_summaries, get_hrv_summaries. " +

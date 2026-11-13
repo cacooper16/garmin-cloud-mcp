@@ -13,6 +13,7 @@ export const PERIODS = [
 	"last_28_days",
 	"last_30_days",
 	"last_90_days",
+	"last_180_days",
 	"last_365_days",
 	"this_week",
 	"last_week",
@@ -66,6 +67,8 @@ export function resolvePeriod(period: Period, today: string): [string, string] {
 			return [addDays(today, -29), today];
 		case "last_90_days":
 			return [addDays(today, -89), today];
+		case "last_180_days":
+			return [addDays(today, -179), today];
 		case "last_365_days":
 			return [addDays(today, -364), today];
 		case "this_week":
