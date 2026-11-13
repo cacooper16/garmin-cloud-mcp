@@ -15,6 +15,7 @@ const INSTRUCTIONS =
 	"'how am I / recovered / ready to train / how did I sleep last night' -> get_readiness (defaults to today); " +
 	"trends in sleep, resting HR, HRV, stress, steps or Body Battery over weeks or months -> summarize_wellness (set include to just the sources needed); " +
 	"training totals, distances, paces or trends -> summarize_activities; " +
+	"'am I building too fast', load ramp, or comparing one training block with the last -> summarize_activities with group_by 'week' (load_trend: weekly load, % change, acute:chronic ratio, flags); " +
 	"weekday patterns -> group_by 'weekday'; " +
 	"specific workouts, longest or fastest -> search_activities (sort_by), then get_activity for one or compare_activities for 2-5; " +
 	"personal bests / PRs across runs ('my 5k PB', 'fastest half this year') or race time estimates -> get_personal_bests; " +

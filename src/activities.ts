@@ -193,6 +193,34 @@ const LOAD_METHODS: { method: string; label: string; score: (a: Raw) => number |
 /** Share of activities a method must cover to be used; the rest count as zero. */
 const LOAD_COVERAGE = 0.9;
 
+type LoadMethod = (typeof LOAD_METHODS)[number];
+
+/** The best load measure that (nearly) every activity has, so one measure is used throughout. */
+function chooseLoadMethod(activities: Raw[]): LoadMethod {
+	return (
+		LOAD_METHODS.find((m) => activities.filter((a) => m.score(a) !== undefined).length >= activities.length * LOAD_COVERAGE) ??
+		LOAD_METHODS.at(-1)!
+	);
+}
+
+/** Above this acute:chronic ratio a period is flagged. */
+export const RATIO_FLAG = 1.3;
+/** A week-on-week (or month-on-month) load rise above this percentage is flagged. */
+export const JUMP_FLAG_PCT = 30;
+
+/** The common sports-science reading of the acute:chronic ratio (0.8-1.3 is the usual "sweet spot"). */
+export function loadBand(ratio: number): string {
+	return ratio < 0.8
+		? "below usual (detraining or recovery week)"
+		: ratio <= RATIO_FLAG
+			? "in usual range"
+			: ratio <= 1.5
+				? "elevated"
+				: "spike (high injury-risk zone)";
+}
+
+const dateOf = (a: Raw) => String(a.startTimeLocal ?? "").slice(0, 10);
+
 /**
  * Acute:chronic workload ratio: the last 7 days' load against the average
  * week of the last 28. Computed here because Garmin's own Training Status
@@ -205,15 +233,12 @@ export function trainingLoadRatio(activities: Raw[], date: string) {
 	const from28 = addDays(date, -27);
 	const from7 = addDays(date, -6);
 	const inWindow = activities.filter((a) => {
-		const d = String(a.startTimeLocal ?? "").slice(0, 10);
+		const d = dateOf(a);
 		return d >= from28 && d <= date;
 	});
 	if (!inWindow.length) return { note: "no activities in the last 28 days" };
 
-	const chosen =
-		LOAD_METHODS.find((m) => inWindow.filter((a) => m.score(a) !== undefined).length >= inWindow.length * LOAD_COVERAGE) ??
-		LOAD_METHODS.at(-1)!;
-
+	const chosen = chooseLoadMethod(inWindow);
 	let acute = 0;
 	let chronic = 0;
 	let missing = 0;
@@ -224,28 +249,111 @@ export function trainingLoadRatio(activities: Raw[], date: string) {
 			continue;
 		}
 		chronic += load;
-		if (String(a.startTimeLocal).slice(0, 10) >= from7) acute += load;
+		if (dateOf(a) >= from7) acute += load;
 	}
 	const weekly = chronic / 4;
 	const ratio = weekly > 0 ? round(acute / weekly, 2) : undefined;
-	const band =
-		ratio === undefined
-			? undefined
-			: ratio < 0.8
-				? "below usual (detraining or recovery week)"
-				: ratio <= 1.3
-					? "in usual range"
-					: ratio <= 1.5
-						? "elevated"
-						: "spike (high injury-risk zone)";
 	return {
 		acute_7d: Math.round(acute),
 		chronic_weekly_avg_28d: Math.round(weekly),
 		ratio,
-		band,
+		band: ratio === undefined ? undefined : loadBand(ratio),
 		method: chosen.method,
 		activities_counted: inWindow.length - missing,
 		activities_without_value: missing || undefined,
 		source: `computed from ${chosen.label}; not Garmin's Training Status`,
 	};
+}
+
+/** How the 28 days before the range came back: fetched, fetched but empty, or failed. */
+export type LeadIn = "ok" | "empty" | "unavailable";
+
+/**
+ * Load per week or month over [start, end], with the acute:chronic ratio at
+ * the end of each period and the change from the previous period. Expects
+ * activities from 28 days before `start` (the lead-in) so the first periods'
+ * ratios have a full chronic window. Partial periods (a week cut by the range,
+ * or the current week) get no change figure, since they'd compare unlike
+ * spans. Flags ratios above 1.3 and rises over 30%.
+ */
+export function loadTimeline(activities: Raw[], start: string, end: string, groupBy: "week" | "month", leadIn: LeadIn) {
+	const from = addDays(start, -28);
+	const window = activities.filter((a) => {
+		const d = dateOf(a);
+		return d >= from && d <= end;
+	});
+	if (!window.some((a) => dateOf(a) >= start)) return undefined;
+	const method = chooseLoadMethod(window);
+	const daily = new Map<string, number>();
+	for (const a of window) {
+		const v = method.score(a);
+		if (v !== undefined) daily.set(dateOf(a), (daily.get(dateOf(a)) ?? 0) + v);
+	}
+	const sum = (a: string, b: string) => {
+		let t = 0;
+		for (const [d, v] of daily) if (d >= a && d <= b) t += v;
+		return t;
+	};
+	/** Lead-in dates are usable unless the lead-in fetch failed. */
+	const known = (d: string) => d >= start || (leadIn !== "unavailable" && d >= from);
+
+	const periods: { label: string; from: string; to: string; full: boolean }[] = [];
+	if (groupBy === "week") {
+		for (let p = weekStart(start); p <= end; p = addDays(p, 7)) {
+			const last = addDays(p, 6);
+			periods.push({ label: p, from: p < start ? start : p, to: last > end ? end : last, full: p >= start && last <= end });
+		}
+	} else {
+		for (let p = `${start.slice(0, 7)}-01`; p <= end; p = nextMonth(p)) {
+			const last = addDays(nextMonth(p), -1);
+			periods.push({ label: p.slice(0, 7), from: p < start ? start : p, to: last > end ? end : last, full: p >= start && last <= end });
+		}
+	}
+
+	const unit = groupBy === "week" ? "week" : "month";
+	let prev: { load: number; full: boolean } | undefined;
+	if (groupBy === "week" && periods[0]?.full && known(addDays(periods[0].from, -7))) {
+		prev = { load: sum(addDays(periods[0].from, -7), addDays(periods[0].from, -1)), full: true };
+	}
+	let partialRatios = 0;
+	const rows = periods.map((p) => {
+		const load = sum(p.from, p.to);
+		const row: Raw = { period: p.label, load: Math.round(load) };
+		if (!p.full) row.partial = true;
+		if (p.full && prev?.full && prev.load > 0) row.change_pct = Math.round((load / prev.load - 1) * 100);
+		const chronicFrom = addDays(p.to, -27);
+		if (known(chronicFrom)) {
+			const weekly = sum(chronicFrom, p.to) / 4;
+			if (weekly > 0) {
+				const ratio = round(sum(addDays(p.to, -6), p.to) / weekly, 2);
+				row.ratio = ratio;
+				const band = loadBand(ratio);
+				if (band !== "in usual range") row.band = band;
+			}
+		} else partialRatios++;
+		const flags: string[] = [];
+		if (typeof row.ratio === "number" && row.ratio > RATIO_FLAG) flags.push(`ratio ${row.ratio} above ${RATIO_FLAG}`);
+		if (typeof row.change_pct === "number" && row.change_pct > JUMP_FLAG_PCT) flags.push(`load up ${row.change_pct}% on the previous ${unit}`);
+		if (flags.length) row.flag = flags.join("; ");
+		prev = { load, full: p.full };
+		return row;
+	});
+
+	const notes: string[] = [];
+	if (leadIn === "unavailable") {
+		notes.push(`Couldn't fetch the 28 days before ${start}, so periods ending before ${addDays(start, 27)} have no ratio (${partialRatios} of them).`);
+	} else if (leadIn === "empty") {
+		notes.push(`No matching activities in the 28 days before ${start}. If that's missing data rather than rest, the first ratios read high.`);
+	}
+	return {
+		method: method.method,
+		source: `computed from ${method.label}; not Garmin's Training Status`,
+		periods: rows,
+		notes: notes.length ? notes : undefined,
+	};
+}
+
+function nextMonth(firstOfMonth: string): string {
+	const [y, m] = firstOfMonth.split("-").map(Number) as [number, number];
+	return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
 }

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { compactActivity, summarizeActivities, trainingLoadRatio } from "./activities.ts";
+import { compactActivity, type LeadIn, loadTimeline, summarizeActivities, trainingLoadRatio } from "./activities.ts";
 import { BEST_EFFORTS, formatAnalysis, type HrZones, loadAnalysis, SECTIONS, type Unit, zonesFromApi } from "./analysis.ts";
 import {
 	compactActivityDetail,
@@ -724,6 +724,9 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				"Best tool for activity totals and trends (e.g. 'how far did I run each month', 'has my pace improved'). " +
 				"Fetches every matching activity in the range and returns only aggregates per period and type: count, distance (km and mi), moving time, elevation, longest, " +
 				"average speed and pace (distance-weighted), fastest average pace, average HR, training load, and time in HR zones 1-5 (minutes and %, for zone 2 / 80-20 questions). " +
+				"With group_by 'week' or 'month' it also returns load_trend: load per period, % change vs the previous period, and the acute:chronic ratio at the end of each, " +
+				"with flags for a ratio above 1.3 or a rise over 30%. Use group_by='week' for 'am I building too fast / ramping up too quickly', " +
+				"and for 'compare this block with my last one' (e.g. last_90_days by week, or two ranges). " +
 				`Range up to ${MAX_SUMMARY_RANGE_DAYS} days.`,
 			inputSchema: z.object({
 				...activityFilters,
@@ -740,11 +743,19 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				// Split into 92-day chunks fetched in parallel (a year is one round of
 				// four), paging within a chunk only when it holds 100+ activities.
 				const unavailable: string[] = [];
+				const timeline = args.group_by === "week" || args.group_by === "month" ? args.group_by : undefined;
+				// The load trend needs the 28 days before the range, so the first
+				// period's acute:chronic ratio has a full chronic window.
+				const leadInFetch = timeline
+					? fetchActivities(g, filterParams({ ...args, start_date: addDays(s, -28), end_date: addDays(s, -1) })).catch(() => undefined)
+					: undefined;
 				const parts = await mapLimit(splitRange(s, e, MAX_RANGE_DAYS), FETCH_CONCURRENCY, ([cs, ce]) =>
 					settle(`${cs}..${ce}`, fetchActivities(g, filterParams({ ...args, start_date: cs, end_date: ce })), unavailable),
 				);
 				if (parts.every((p) => p === undefined)) throw new GarminApiError(unavailable.join("; "));
 				const all = parts.flatMap((p) => p?.list ?? []);
+				const leadIn = await leadInFetch;
+				const leadInState: LeadIn = !leadIn ? "unavailable" : leadIn.list.length ? "ok" : "empty";
 				return {
 					start_date: s,
 					end_date: e,
@@ -753,6 +764,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 						note: `Stopped at ${MAX_SUMMARY_ACTIVITIES} activities in a 92-day stretch; narrow the range or filter by type for complete totals.`,
 					}),
 					groups: orNone(summarizeActivities(all, args.group_by), "no matching activities in this range"),
+					load_trend: timeline ? loadTimeline([...(leadIn?.list ?? []), ...all], s, e, timeline, leadInState) : undefined,
 					unavailable: unavailable.length ? unavailable : undefined,
 				};
 			}),

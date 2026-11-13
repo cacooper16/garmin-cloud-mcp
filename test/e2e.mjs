@@ -387,8 +387,14 @@ try {
 		assert.equal(out.groups[0].avg_pace_per_km, "5:00");
 		assert.ok(text.length < 1000, `summary is ${text.length} chars`);
 		const pages = garminCalls.slice(before).filter((c) => c.includes("search/activities"));
-		// 2026-05-01..07-31 holds all 150 runs (two pages); 08-01..10-06 is empty (one page).
-		assert.equal(pages.length, 3, pages.join("\n"));
+		// 2026-05-01..07-31 holds all 150 runs (two pages); 08-01..10-06 is empty (one page);
+		// plus one page for the 28-day lead-in the load trend needs.
+		assert.equal(pages.length, 4, pages.join("\n"));
+		assert.ok(pages.some((p) => p.includes("startDate=2026-04-03&endDate=2026-04-30")), "28-day lead-in fetched");
+		const july = out.load_trend.periods.find((p) => p.period === "2026-07");
+		assert.equal(out.load_trend.method, "moving_minutes"); // no load or HR in the fake runs
+		assert.equal(july.load, 150 * 25);
+		assert.equal(out.load_trend.periods.at(-1).partial, true, "October is cut off by the range");
 		const first = pages.filter((p) => p.includes("startDate=2026-05-01&endDate=2026-07-31"));
 		assert.equal(first.length, 2, pages.join("\n"));
 		assert.ok(first.every((p) => p.includes("activityType=running")), first[0]);
