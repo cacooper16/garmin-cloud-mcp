@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { _resetCachesForTests, GarminClient } from "../src/garmin.ts";
+import { _resetCachesForTests, GarminClient, type KVLike } from "../src/garmin.ts";
 import { MemoryKV } from "../src/memory-kv.ts";
 import { createGarminServer } from "../src/server.ts";
 import type { ToolOptions } from "../src/tools.ts";
@@ -15,12 +15,14 @@ export async function callGarminTool(
 	fetch: (url: URL) => Response | Promise<Response>,
 	args: object,
 	options: ToolOptions = {},
+	/** Pass the same KV to several calls to keep the cache between them, as a real server does. */
+	kv: KVLike = new MemoryKV(),
 ): Promise<any> {
 	_resetCachesForTests();
 	const jwt = `e30.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 86_400 })).toString("base64url")}.s`;
 	const client = new GarminClient({
 		apiKey: "k",
-		kv: new MemoryKV(),
+		kv,
 		fetch: async (input) => {
 			const url = new URL(String(input));
 			if (url.pathname.endsWith("/token")) return new Response(jwt);

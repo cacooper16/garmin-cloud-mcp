@@ -643,8 +643,10 @@ try {
 		assert.equal(downloads.length, 15, "Cloudflare's free plan allows 50 outbound requests per request");
 		// Activity 77 was analysed (and cached) by the previous step, so it comes free.
 		assert.equal(r.activities_analysed, 16);
-		assert.equal(r.personal_bests[0].time, "4:10");
-		assert.ok(r.notes.some((n) => /134 of 150 activities weren't analysed yet/.test(n)), r.notes.join("\n"));
+		assert.equal(r.complete, false);
+		assert.match(r.status, /^Partial: 16 of 150 runs analysed so far\. Call again to continue/);
+		assert.equal(r.provisional_personal_bests[0].time, "4:10");
+		assert.equal(r.personal_bests, undefined, "partial results aren't presented as final");
 	});
 
 	await step("prompt templates are listed", async () => {

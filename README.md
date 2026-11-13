@@ -517,10 +517,11 @@ activities per call and skips manual entries and imports, which have no file.
 
 The first call over a long range is slow, because each activity's file is
 downloaded once (later calls use the cache). If it runs out of time, or Garmin
-rate-limits it, it returns what it has so far and says so; asking again
-carries on where it stopped. The cloud version downloads at most 15 files per
-call to stay within Cloudflare's free-plan limits, so filling the cache for a
-full year takes several calls.
+rate-limits it, the result starts with `"complete": false` and a status line,
+and the bests are labelled provisional, so your AI app knows to call again (it
+carries on where it stopped) rather than present them as final. The cloud
+version downloads at most 15 files per call to stay within Cloudflare's
+free-plan limits, so filling the cache for a full year takes several calls.
 
 Race estimates look at the last 90 days of the range. If you ran the race
 distance itself, your best time there is shown, since an actual result beats

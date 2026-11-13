@@ -789,8 +789,9 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				"Use for 'what's my 5k PB', 'fastest half this year', 'what could I run a 10k in'. " +
 				"These are computed from the user's activity files (fastest continuous stretch within each run), NOT Garmin's official personal records, which the Personal API doesn't provide; " +
 				"estimates are estimates, not Garmin's race predictor. " +
-				`Analyses the newest ${pbLimits.maxActivities} matching activities per call. The first call over a long range is slow (each activity's file is downloaded once, then cached); ` +
-				"if the result says some weren't analysed yet, calling again continues where it stopped. Defaults to the last 365 days and running.",
+				`Analyses the newest ${pbLimits.maxActivities} matching activities per call. The first call over a long range is slow (each activity's file is downloaded once, then cached). ` +
+				"The result starts with complete. If complete is false (the fields are then named provisional_*), the bests are NOT final: call again with the same arguments " +
+				"(it continues from the cache) until complete is true, or tell the user the results are partial. Defaults to the last 365 days and running.",
 			inputSchema: z.object({
 				period,
 				start_date: isoDate.optional().describe("First day, YYYY-MM-DD, inclusive. Defaults to 365 days ago."),
@@ -837,18 +838,18 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				const unit = await unitFor(args.unit);
 				const predictFrom = addDays(e, -(PREDICTION_WINDOW_DAYS - 1));
 
+				// Partial results must never read as final: say so first, and rename
+				// the result fields, until every chosen activity has been analysed.
+				const complete = !loaded.deferred && !loaded.rateLimited;
+				const what = args.activity_type === "running" ? "runs" : `${args.activity_type} activities`;
+				const status = complete
+					? undefined
+					: `Partial: ${loaded.runs.length} of ${chosen.length} ${what} analysed so far` +
+						(loaded.rateLimited
+							? " (Garmin rate-limited the file downloads). Wait a minute, then call again before answering; "
+							: ". Call again to continue (finished analyses are cached) before answering; ") +
+						"these are not the final bests.";
 				const notes: string[] = [];
-				if (loaded.rateLimited) {
-					notes.push(
-						`Garmin rate-limited the file downloads (HTTP 429), so these results cover ${loaded.runs.length} of ${chosen.length} activities. ` +
-							"Wait a minute and ask again: finished analyses are cached, so it continues where it stopped.",
-					);
-				} else if (loaded.deferred) {
-					notes.push(
-						`${loaded.deferred} of ${chosen.length} activities weren't analysed yet (per-call time or download limit). ` +
-							"Ask again to continue: finished analyses are cached, so each call gets further.",
-					);
-				}
 				if (eligible.length > chosen.length || capped) {
 					notes.push(
 						`${capped ? "Over 1000" : eligible.length} matching activities; analysed the newest ${chosen.length} (back to ${chosen.at(-1)?.startTimeLocal?.toString().slice(0, 10)}). ` +
@@ -859,20 +860,29 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				if (noFile) notes.push(`${noFile} activities skipped: no FIT file (manual entries or GPX/TCX imports).`);
 				if (loaded.failed) notes.push(`${loaded.failed} activities couldn't be read: ${loaded.firstError}`);
 
+				const bests = loaded.runs.length
+					? personalBests(loaded.runs, distances, unit)
+					: complete
+						? `no ${args.activity_type} activities with a FIT file in this range`
+						: "none analysed yet";
+				const estimates = {
+					note:
+						`From efforts since ${predictFrom}. basis 'actual': you ran that distance, so your best time there is shown. ` +
+						"basis 'riegel': estimated (T2 = T1 x (D2/D1)^1.06) from your fastest effort at the closest distance you ran, within 4x. Estimates, not Garmin's race predictor.",
+					estimates: racePredictions(loaded.runs, predictFrom, unit),
+				};
+				// Key order is output order: completeness first.
 				return {
+					complete,
+					status,
 					start_date: s,
 					end_date: e,
 					activity_type: args.activity_type,
 					activities_analysed: loaded.runs.length,
-					personal_bests: loaded.runs.length
-						? personalBests(loaded.runs, distances, unit)
-						: `no ${args.activity_type} activities with a FIT file in this range`,
-					race_estimates: {
-						note:
-							`From efforts since ${predictFrom}. basis 'actual': you ran that distance, so your best time there is shown. ` +
-							"basis 'riegel': estimated (T2 = T1 x (D2/D1)^1.06) from your fastest effort at the closest distance you ran, within 4x. Estimates, not Garmin's race predictor.",
-						estimates: racePredictions(loaded.runs, predictFrom, unit),
-					},
+					activities_to_analyse: chosen.length,
+					...(complete
+						? { personal_bests: bests, race_estimates: estimates }
+						: { provisional_personal_bests: bests, provisional_race_estimates: estimates }),
 					source: "computed from your activity files, not Garmin's official records",
 					notes: notes.length ? notes : undefined,
 				};

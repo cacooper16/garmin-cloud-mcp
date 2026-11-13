@@ -4,6 +4,7 @@ import { type Analysis, ANALYSIS_VERSION, analysisCacheName, type Effort } from 
 import { GarminApiError } from "../src/garmin.ts";
 import { loadMany, personalBests, racePredictions, riegel, type RunEntry } from "../src/records.ts";
 import { buildFit, buildZip, steadyRun } from "./fit-fixture.ts";
+import { MemoryKV } from "../src/memory-kv.ts";
 import { callGarminTool } from "./tool-harness.ts";
 
 const LABELS: Record<number, string> = { 1000: "1 km", 5000: "5 km", 10000: "10 km", 21097.5: "half marathon", 42195: "marathon" };
@@ -232,6 +233,10 @@ describe("get_personal_bests tool", () => {
 			},
 			{ start_date: "2026-01-01", end_date: "2026-10-31", distances: ["5 km"] },
 		);
+		assert.equal(out.complete, true);
+		assert.equal(Object.keys(out)[0], "complete");
+		assert.equal(out.status, undefined, "no partial note when complete");
+		assert.equal(out.provisional_personal_bests, undefined);
 		assert.equal(out.activities_analysed, 150);
 		assert.equal(downloads.length, 150);
 		assert.equal(out.personal_bests[0].time, "20:50");
@@ -254,7 +259,29 @@ describe("get_personal_bests tool", () => {
 			{ period: "last_365_days" },
 		);
 		assert.ok(out.activities_analysed >= 1 && out.activities_analysed <= 2, String(out.activities_analysed));
-		assert.ok(out.notes.some((n: string) => /rate-limited.*ask again/i.test(n)), out.notes);
+		assert.equal(out.complete, false);
+		assert.match(out.status, /^Partial: \d of 6 runs analysed so far \(Garmin rate-limited the file downloads\)\. Wait a minute, then call again before answering; these are not the final bests\.$/);
+		assert.ok(out.provisional_personal_bests && !out.personal_bests);
+	});
+
+	it("reports complete: true once repeated calls have analysed everything", async () => {
+		const zip = buildZip([{ name: "a.fit", data: buildFit({ records: steadyRun(1400, 4) }) }]);
+		const kv = new MemoryKV();
+		const call = () =>
+			callGarminTool(
+				"get_personal_bests",
+				(url) => (url.pathname.endsWith("/search/activities") ? Response.json(listing(10)) : new Response(zip)),
+				{},
+				{ personalBests: { maxDownloads: 4 } },
+				kv,
+			);
+		const runs = [await call(), await call(), await call()];
+		assert.deepEqual(runs.map((r) => [r.complete, r.activities_analysed]), [[false, 4], [false, 8], [true, 10]]);
+		const done = runs[2];
+		assert.equal(done.status, undefined);
+		assert.equal(done.personal_bests[0].time, "4:10");
+		assert.ok(done.race_estimates.estimates.length > 0);
+		assert.equal(done.provisional_personal_bests, undefined);
 	});
 
 	it("caps downloads per call when the deployment asks (the Worker does)", async () => {
@@ -264,7 +291,15 @@ describe("get_personal_bests tool", () => {
 			{},
 			{ personalBests: { maxDownloads: 4 } },
 		);
+		// Partial: completeness comes first, and the results are labelled provisional.
+		assert.deepEqual(Object.keys(out).slice(0, 2), ["complete", "status"]);
+		assert.equal(out.complete, false);
+		assert.equal(out.status, "Partial: 4 of 10 runs analysed so far. Call again to continue (finished analyses are cached) before answering; these are not the final bests.");
 		assert.equal(out.activities_analysed, 4);
-		assert.ok(out.notes.some((n: string) => /6 of 10 activities weren't analysed yet/.test(n)), out.notes);
+		assert.equal(out.activities_to_analyse, 10);
+		assert.equal(out.personal_bests, undefined);
+		assert.equal(out.race_estimates, undefined);
+		assert.equal(out.provisional_personal_bests[0].distance, "1 km");
+		assert.ok(out.provisional_race_estimates.estimates.length > 0);
 	});
 });
