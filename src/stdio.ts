@@ -17,12 +17,9 @@
 // don't import anything that pulls in agents, hono, the OAuth provider or
 // "cloudflare:workers". test/pack.test.ts checks this.
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { createLocalKV } from "./file-kv.ts";
 import { GarminClient } from "./garmin.ts";
-import { MemoryKV } from "./memory-kv.ts";
 import { createGarminServer } from "./server.ts";
-
-// tsconfig loads Worker types only; this is all we need from Node.
-declare const process: { env: Record<string, string | undefined> };
 
 const apiKey = process.env.GARMIN_API_KEY ?? "";
 if (!apiKey.trim()) {
@@ -31,7 +28,9 @@ if (!apiKey.trim()) {
 	);
 }
 
-const kv = new MemoryKV();
+// Derived data (analyses, settled past-date responses) is cached on disk so it
+// survives restarts; the bearer token is only ever held in memory.
+const { kv, dir } = createLocalKV(process.env);
 const server = createGarminServer(() => new GarminClient({ apiKey, kv, cacheResponses: true }));
 await server.connect(new StdioServerTransport());
-console.error("garmin-mcp: running on stdio");
+console.error(`garmin-mcp: running on stdio (${dir ? `cache: ${dir}` : "cache in memory only"})`);

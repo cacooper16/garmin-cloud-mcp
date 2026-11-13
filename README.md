@@ -71,7 +71,6 @@ recent runs:
 | No Cloudflare or GitHub account needed                  |  ✅   |       |
 | Garmin key stored only on your computer                 |  ✅   |       |
 | Nothing listening on the network                        |  ✅   |       |
-| Cache kept between sessions                             |       |  ✅   |
 | Free to run                                             |  ✅   |  ✅   |
 | All 26 tools and 5 prompts                              |  ✅   |  ✅   |
 
@@ -371,8 +370,9 @@ heart rate. This server does the heavy lifting itself:
   comes back with a short note, so the model doesn't retry everything.
 - **Caching.** Data at least 3 days old has settled, so it's cached for 7 days,
   and activity details for a day. Activity analyses never change, so they're
-  cached indefinitely (only the derived tables, never the file). Follow-up questions skip Garmin. (Locally,
-  the cache lasts until the app restarts the server.)
+  cached indefinitely (only the derived tables, never the file). Follow-up questions skip Garmin. Locally,
+  the cache is kept on disk, so it survives restarts (see
+  [Security model](#local)).
 - **Things Garmin's API doesn't give you directly:** per-km/mile splits and
   best efforts (computed from the activity's FIT file in the server, so a
   two-hour run comes back as a few KB of tables, not 7,000 samples), training
@@ -495,8 +495,17 @@ compact answer is missing it: please [open an issue](CONTRIBUTING.md#reporting-i
   sign-in. Never wrap it in an HTTP proxy or expose it on a network; use the
   cloud version for remote access.
 - **Garmin credentials.** The key lives in your AI app's MCP config on your
-  computer. The bearer token and cached responses are held in memory and gone
-  when the process exits.
+  computer. The bearer token is held in memory only and gone when the process
+  exits; neither the key nor the token is ever written to disk.
+- **Cache on disk.** Derived data (cached past-date responses such as daily
+  summaries, and activity analyses: split and lap tables, never the FIT file or
+  GPS positions) is cached so it survives restarts, in a folder only your user
+  can read: `~/.cache/garmin-mcp` on macOS and Linux (or
+  `$XDG_CACHE_HOME/garmin-mcp`), `%LOCALAPPDATA%\garmin-mcp\cache` on
+  Windows. It's capped at 200 MB, oldest first out. To clear it, delete that
+  folder. To use a different folder, set `GARMIN_MCP_CACHE_DIR`; to keep
+  everything in memory only, set `GARMIN_MCP_NO_CACHE=1` (both go in the same
+  `env` block as `GARMIN_API_KEY`).
 
 ### Cloud
 
