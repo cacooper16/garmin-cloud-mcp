@@ -68,7 +68,7 @@ the deployed Worker. `npm audit --omit=dev` is clean.
 
 Publishing the release runs `.github/workflows/release.yml`. It checks the tag
 matches every version, runs `npm run check`, publishes to npm (with
-provenance) and the MCP Registry, and attaches `garmin-mcp.mcpb` to the
+provenance) and the MCP Registry, and attaches `garmin-mcp.mcpb`, with a signed build attestation, to the
 release. It needs no tokens: npm and the MCP Registry both authenticate with
 GitHub's OIDC token.
 

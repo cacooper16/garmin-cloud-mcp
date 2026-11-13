@@ -2,7 +2,7 @@
 	"manifest_version": "0.3",
 	"name": "garmin-mcp",
 	"display_name": "Garmin MCP",
-	"version": "1.3.0",
+	"version": "1.4.0",
 	"description": "Ask Claude about your Garmin training, sleep and recovery. Uses Garmin's official Personal API: no password, read-only.",
 	"long_description": "Ask Claude about your training, sleep and recovery, using your own Garmin data. It gives Claude read-only access to your Garmin Connect data through Garmin's official Personal API, using an API key you can revoke at any time instead of your Garmin password, and data goes straight from Garmin to your computer. To get a key, open Garmin Connect > Settings > Personal API Token and create one. Not affiliated with or endorsed by Garmin; \"Garmin\" and \"Garmin Connect\" are trademarks of Garmin Ltd. or its subsidiaries.",
 	"author": {

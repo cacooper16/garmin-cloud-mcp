@@ -9,7 +9,8 @@ on:
 
 permissions:
   contents: write # gh release upload
-  id-token: write # npm trusted publishing and MCP Registry login (OIDC)
+  id-token: write # npm trusted publishing, MCP Registry login and build attestation (OIDC)
+  attestations: write # build provenance for garmin-mcp.mcpb
 
 concurrency:
   group: release
@@ -75,12 +76,21 @@ jobs:
 
       # Before the registry step, so a registry hiccup can't stop the Claude
       # Desktop download from being attached to the release.
+      - name: Build the Claude Desktop extension
+        run: npm run build:mcpb
+
+      # Signed provenance tying garmin-mcp.mcpb to this repo, workflow and
+      # commit. Anyone can check a download with:
+      #   gh attestation verify garmin-mcp.mcpb --repo colincooperio/garmin-mcp
+      - name: Attest the Claude Desktop extension
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: garmin-mcp.mcpb
+
       - name: Attach the Claude Desktop extension
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          npm run build:mcpb
-          gh release upload "$TAG" garmin-mcp.mcpb --clobber
+        run: gh release upload "$TAG" garmin-mcp.mcpb --clobber
 
       # The registry checks the version exists on npm, and a just-published
       # version can take a minute or two to appear there.

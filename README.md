@@ -45,6 +45,9 @@ Ask things like:
 - _"Which day of the week do I sleep worst?"_
 - _"Compare my last two long runs."_
 - _"Give me my km splits for Sunday's race. Did I negative split?"_
+- _"What are my 5k and 10k PBs this year, and what could I run a half in?"_
+- _"Am I building my mileage too fast?"_
+- _"Do I run worse after a bad night's sleep?"_
 
 Here it is in Claude on a phone (cloud version), projecting a 10k time from
 recent runs:
@@ -72,7 +75,7 @@ recent runs:
 | Garmin key stored only on your computer                 |  ✅   |       |
 | Nothing listening on the network                        |  ✅   |       |
 | Free to run                                             |  ✅   |  ✅   |
-| All 26 tools and 5 prompts                              |  ✅   |  ✅   |
+| All 28 tools and 5 prompts                              |  ✅   |  ✅   |
 
 ### Still deciding?
 
@@ -154,6 +157,17 @@ All you need is a Garmin Personal API key (see
 
 Claude Desktop runs the extension itself, so you don't need Node or a config
 file, and your key is stored in your system keychain.
+
+Claude Desktop warns before installing it. It shows that warning for every
+extension that isn't installed from Anthropic's directory, not because of
+anything in this one. This extension only connects to Garmin's API, and its
+source is all in this repo. To check that your download was built from this
+repo by its release workflow, and not changed since, run this with the
+[GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify garmin-mcp.mcpb --repo colincooperio/garmin-mcp
+```
 
 ### Claude Code, Cursor, VS Code and other apps
 
@@ -388,8 +402,9 @@ your own machine.
 | If the credential leaks                     | Your whole Garmin account                     | Read-only health data, until you delete the key                   | Same as local, and the key sits in Cloudflare secrets, not on a laptop |
 
 The trade-off: the Personal API covers less. It has no golf scorecards,
-training plans, Garmin Training Status, race predictions, gear, courses or
-write access. The server tells the model this up front, so it says it isn't
+training plans, Garmin Training Status, Garmin's race predictor or personal
+records, gear, courses or write access. (This server computes its own personal
+bests and race estimates from your activity files.) The server tells the model this up front, so it says it isn't
 available instead of hunting for it.
 
 ### Compared with a basic wrapper of the API
@@ -423,7 +438,9 @@ heart rate. This server does the heavy lifting itself:
 - **Things Garmin's API doesn't give you directly:** per-km/mile splits and
   best efforts (computed from the activity's FIT file in the server, so a
   two-hour run comes back as a few KB of tables, not 7,000 samples), training
-  load (acute:chronic ratio), time in heart-rate zones (for one activity, the
+  load (acute:chronic ratio, and its trend week by week), personal bests across
+  runs with race time estimates, how sleep, HRV and Body Battery relate to your
+  running, time in heart-rate zones (for one activity, the
   watch's own figures with the zones you had then, so they match Garmin
   Connect), weekday patterns, distance-weighted pace, side-by-side activity
   comparison.
@@ -444,9 +461,11 @@ on its own means "since then": the range ends today.
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `get_readiness`         | "How recovered am I?", "How did I sleep?": that night's sleep, HRV vs baseline, resting HR, Body Battery, each against your previous 7 days; training load; the last 3 days of training                        |
 | `summarize_wellness`    | Sleep, resting HR, HRV, stress, steps and Body Battery trends: by week, month, weekday or overall                                                                                                              |
-| `summarize_activities`  | Training totals: distance, time, pace, HR, training load and time in HR zones, by week, month, weekday or overall                                                                                              |
+| `summarize_activities`  | Training totals: distance, time, pace, HR, training load and time in HR zones, by week, month, weekday or overall. By week or month, also the load trend: change on the previous period, acute:chronic ratio and flags for a fast build |
 | `compare_activities`    | 2–5 activities side by side                                                                                                                                                                                    |
 | `get_activity_analysis` | One activity from its original FIT file: per-km or per-mile splits, the watch's laps and workout reps, best efforts (1 km to marathon), time in HR zones as the watch recorded it, first- vs second-half drift |
+| `get_personal_bests`    | Your fastest 1 km, 1 mile, 5 km, 10 km, half and marathon across many activities, with the next two best, plus race time estimates (Riegel). Computed from your activity files, not Garmin's official records |
+| `analyze_recovery_impact` | Whether sleep, HRV or Body Battery relate to how you run: runs after your best third of nights against your worst third, compared at the same heart rate (against your own speed-for-HR line), with each group's HR, a correlation, and an honest "not enough data" |
 
 **Detail.** Compact by default; pass `detail: "full"` for Garmin's raw data.
 
@@ -484,6 +503,46 @@ which it used:
 It uses one measure for the whole window, because mixing them would make the
 ratio meaningless. Treat it as a guide, not Garmin's figure.
 
+`summarize_activities` by week or month shows the same ratio at the end of each
+period, with the load's change on the previous period. It flags a ratio above
+1.3 or a rise of more than 30%, and fetches the 28 days before your range so
+the first period's ratio is real.
+
+### Personal bests and race estimates
+
+The Personal API has no personal records, so `get_personal_bests` works them
+out from your activity files: the fastest continuous stretch of each distance
+within each run, then the fastest across runs. It reads the newest 150 matching
+activities per call and skips manual entries and imports, which have no file.
+
+The first call over a long range is slow, because each activity's file is
+downloaded once (later calls use the cache). If it runs out of time, or Garmin
+rate-limits it, it returns what it has so far and says so; asking again
+carries on where it stopped. The cloud version downloads at most 15 files per
+call to stay within Cloudflare's free-plan limits, so filling the cache for a
+full year takes several calls.
+
+Race estimates look at the last 90 days of the range. If you ran the race
+distance itself, your best time there is shown, since an actual result beats
+any formula. Otherwise the estimate uses Riegel's formula (T2 = T1 ×
+(D2/D1)^1.06) from your fastest effort at the closest distance you ran (5 km
+or more), because it's most accurate over short jumps. When two distances are
+about equally close, the more recent effort is used. It never projects more
+than 4× up or down. They're estimates, not Garmin's race predictor.
+
+### Recovery and performance
+
+`analyze_recovery_impact` pairs each run with the night before it and asks
+whether you run differently after your best nights than after your worst.
+Comparing raw pace or "metres per heartbeat" would mostly measure what kind of
+run you chose: easy days after good nights look "less efficient" simply
+because both speed and heart rate are lower. So it fits your own line of speed
+against heart rate across the runs and compares how far above or below that
+line each group was: the difference in s/km at the same heart rate. It
+reports each group's average heart rate, warns when they differ by more than
+about 8 bpm, needs about 8 runs per group, and only calls a relationship
+meaningful from a correlation of 0.3. It's still correlation, not proof.
+
 ## Looking after it
 
 **Rotating the Garmin key.** Garmin emails you before the key expires. Create a
@@ -507,7 +566,7 @@ Then delete the old key in Garmin Connect.
   from the latest release and double-click it.
 - Local with `npx`: `npx` fetches the latest version each time your AI app
   starts the server, so just restart the app. To stay on a fixed version, use
-  `garmin-mcp@1.3.0` in place of `garmin-mcp` in your config.
+  `garmin-mcp@1.4.0` in place of `garmin-mcp` in your config.
 - Cloud: run `npm run update` in the repo folder. It pulls the latest version,
   reinstalls, lists any new settings in `wrangler.example.jsonc` that your
   `wrangler.jsonc` lacks (it never edits your file), runs the tests and
@@ -605,8 +664,9 @@ cut a release.
 - **One Garmin account per cloud deployment or local install.** To share with
   family, each person sets up their own copy with their own Garmin key.
 - **Personal API coverage only.** No golf, training plans, Garmin Training
-  Status, race predictions, VO2 max history, personal records, gear, courses,
-  badges or social.
+  Status, Garmin's race predictor, VO2 max history, gear, courses, badges or
+  social. Garmin's official personal records aren't available either, but
+  `get_personal_bests` computes them from your activity files.
 - **Read-only.** It can't log activities, weight, hydration or food, or change
   goals, settings or workouts. The Personal API has no write access, so your
   AI app can read your Garmin data but never change it.
