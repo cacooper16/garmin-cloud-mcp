@@ -41,7 +41,8 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"build": "npm run types && tsc -p tsconfig.build.json",
-		"build:mcpb": "esbuild src/stdio.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcpb/server/index.js --log-level=warning && mcpb pack mcpb garmin-mcp.mcpb",
+		"sync:prompts": "node --experimental-strip-types --no-warnings scripts/sync-manifest-prompts.mjs",
+		"build:mcpb": "npm run sync:prompts && esbuild src/stdio.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcpb/server/index.js --log-level=warning && mcpb pack mcpb garmin-mcp.mcpb",
 		"check": "npm run types && tsc --noEmit && mcpb validate mcpb/manifest.json && npm test && npm run test:e2e",
 		"setup": "node scripts/setup.mjs",
 		"update": "node scripts/update.mjs",

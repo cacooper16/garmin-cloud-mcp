@@ -31,7 +31,14 @@ npm run test:pack  # pack, install the tarball in a temp project and run its bin
 npm run dev        # the Worker on :8788 (needs .dev.vars, see .dev.vars.example)
 npm run setup      # interactive first-time cloud setup (scripts/setup.mjs)
 npm run update     # update an existing cloud deployment (scripts/update.mjs)
+npm run sync:prompts # copy the prompts from src/prompts.ts into mcpb/manifest.json (build:mcpb runs it)
 ```
+
+Prompts are defined once, in `src/prompts.ts`. Claude Desktop rejects any
+prompt whose served text differs from the manifest's `text` after argument
+substitution, so never edit the manifest's prompts by hand: change
+`src/prompts.ts` and run `npm run sync:prompts`. `test/mcpb.test.ts` fails if
+they drift.
 
 `scripts/setup.mjs` and `scripts/update.mjs` share `scripts/lib.mjs`. They
 take their command runner, prompts and files as arguments, so

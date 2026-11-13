@@ -653,8 +653,8 @@ try {
 		for (const n of ["readiness_check", "sleep_report", "training_review", "weekly_checkin", "compare_recent"]) {
 			assert.ok(names.includes(n), `missing prompt ${n}`);
 		}
-		const got = await mcp(accessToken, "prompts/get", { name: "training_review", arguments: { activity_type: "cycling" } }, session);
-		assert.match(got.json.result.messages[0].content.text, /activity_type 'cycling'/);
+		const got = await mcp(accessToken, "prompts/get", { name: "training_review", arguments: { period: "last 90 days", activity_type: "cycling" } }, session);
+		assert.match(got.json.result.messages[0].content.text, /this period: last 90 days\. Sport: cycling\./);
 	});
 
 	await step("existing tokens stop working if ALLOWED_GITHUB_USER_ID changes", async () => {
