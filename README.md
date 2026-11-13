@@ -16,8 +16,8 @@ Run it whichever way suits you. The tools are identical:
   set up, and all you need is your Garmin key. In Claude Desktop it's a
   one-click install.
 - **Cloud.** Runs on your own Cloudflare account (the free plan is plenty),
-  behind GitHub sign-in. About 20 minutes to set up, and it then works on all
-  your devices: web, desktop and phone.
+  behind GitHub sign-in. About 10 minutes to set up with `npm run setup`, and
+  it then works on all your devices: web, desktop and phone.
 
 It works with Claude, ChatGPT, Claude Code, Codex, Gemini CLI, Cursor, VS Code
 and other MCP clients. See [Local or cloud?](#local-or-cloud) for which apps each option
@@ -131,8 +131,10 @@ Cloudflare secrets. See [Security model](#security-model).
 <details>
 <summary><b>How comfortable with a terminal do I need to be?</b></summary>
 
-Local: you paste one command or one config snippet. Cloud: about a dozen
-commands, plus a few settings in the Cloudflare and GitHub dashboards.
+Local: you paste one command or one config snippet. Cloud: four commands
+(`git clone`, `cd`, `npm install`, `npm run setup`), then the setup script asks
+you questions and does the rest. You fill in one form on GitHub and create a
+key in Garmin Connect along the way.
 
 </details>
 
@@ -142,7 +144,7 @@ Your AI app starts the server as a local process and talks to it directly.
 There's no Cloudflare or GitHub setup.
 
 All you need is a Garmin Personal API key (see
-[Create a Garmin Personal API key](#6-create-a-garmin-personal-api-key)).
+[Create a Garmin Personal API key](#create-a-garmin-personal-api-key)).
 
 ### Claude Desktop: one click
 
@@ -229,88 +231,48 @@ by you.
 - A Cloudflare account (free plan)
 - A GitHub account
 - Node 22 or newer
-- About 20 minutes
+- About 10 minutes
 
-Run all commands from the repo folder.
-
-### 1. Install and log in to Cloudflare
+### Quick setup
 
 ```sh
 git clone https://github.com/colincooperio/garmin-mcp.git
 cd garmin-mcp
 npm install
-npx wrangler login
-cp wrangler.example.jsonc wrangler.jsonc
+npm run setup
 ```
 
-`wrangler.jsonc` is git-ignored, so your settings never get committed.
+`npm run setup` walks you through the rest and does most of it itself. It
+logs you in to Cloudflare in your browser, asks what to call the Worker
+(`garmin-cloud-mcp` unless you choose otherwise; it's part of the URL, and it
+warns you if your account already has a Worker by that name), creates the
+storage the server needs, locks it to your GitHub account, stores your secrets in Cloudflare and
+deploys. Along the way you do two things in your browser:
 
-### 2. Create the KV namespace
+1. **Create a GitHub OAuth app**, which is how sign-in works. The script
+   prints a link to GitHub's form and the exact Homepage and callback URLs to
+   paste into it, then asks for the client ID and secret.
+2. **Create a Garmin Personal API key** (see
+   [below](#create-a-garmin-personal-api-key)) and paste it in.
 
-```sh
-npx wrangler kv namespace create OAUTH_KV
-```
+What you type for secrets isn't shown on screen. It goes straight to
+Cloudflare and is never written to disk. If a step fails, the script says
+which one and how to fix it. Run `npm run setup` again and it skips the steps
+that are done, and asks before replacing anything.
 
-Paste the `id` it prints into `wrangler.jsonc`, replacing `YOUR_KV_NAMESPACE_ID`.
+When it's done it prints your server URL. Then
+[connect your AI apps](#connect-your-ai-apps).
 
-### 3. Lock it to your GitHub account
-
-Open `https://api.github.com/users/<your-github-username>` and copy the numeric
-`id`. Put it in `wrangler.jsonc` as `ALLOWED_GITHUB_USER_ID`.
-
-It uses the numeric ID rather than your username because usernames can be
-changed and then claimed by someone else.
-
-### 4. Work out your Worker's URL
-
-It will be `https://garmin-cloud-mcp.<your-subdomain>.workers.dev`. Your
-`workers.dev` subdomain is on the Workers & Pages overview in the Cloudflare
-dashboard.
-
-Set `MCP_RESOURCE` in `wrangler.jsonc` to that URL with `/mcp` on the end.
-
-### 5. Create a GitHub OAuth app
-
-Go to GitHub → Settings → Developer settings → OAuth Apps → New OAuth App and
-fill in:
-
-- **Homepage URL:** `https://garmin-cloud-mcp.<your-subdomain>.workers.dev`
-- **Authorization callback URL:** `https://garmin-cloud-mcp.<your-subdomain>.workers.dev/callback`
-
-Then generate a client secret.
-
-### 6. Create a Garmin Personal API key
+### Create a Garmin Personal API key
 
 Go to [Garmin Connect → Personal API Token](https://connect.garmin.com/app/settings/personalApiToken)
 → Create Key. Pick 1 year and copy the key; Garmin shows it only once.
 
-### 7. Store the secrets
+### Connect your AI apps
 
-Each command prompts you to paste the value.
-
-```sh
-npx wrangler secret put GITHUB_CLIENT_ID
-npx wrangler secret put GITHUB_CLIENT_SECRET
-npx wrangler secret put COOKIE_ENCRYPTION_KEY   # paste output of: openssl rand -hex 32
-npx wrangler secret put GARMIN_API_KEY
-```
-
-If wrangler asks to create the Worker first, say yes.
-
-### 8. Deploy
-
-```sh
-npm run deploy
-```
-
-This type-checks and runs the full test suite before it deploys. If anything
-fails, nothing ships. The test output includes a few labelled `expected` error
-lines: those come from tests that check the Worker refuses bad requests.
-
-### 9. Connect your AI apps
-
-Your server URL is `https://garmin-cloud-mcp.<your-subdomain>.workers.dev/mcp`.
-Every app opens a GitHub sign-in the first time; sign in and approve.
+Your server URL is `https://garmin-cloud-mcp.<your-subdomain>.workers.dev/mcp`
+(`npm run setup` prints it). Every app opens a GitHub sign-in the first time;
+sign in and approve.
 
 - **Claude**: Settings → Connectors → Add custom connector, and paste the URL.
   The connector follows your Claude account onto every device.
@@ -324,6 +286,91 @@ Every app opens a GitHub sign-in the first time; sign in and approve.
 
 Try _"Am I ready to train today?"_. In apps that show MCP prompts, such as
 Claude's connector menu, you can also pick a ready-made prompt.
+
+<details>
+<summary><b>Setting it up by hand instead</b></summary>
+
+Run all commands from the repo folder.
+
+#### 1. Install and log in to Cloudflare
+
+```sh
+git clone https://github.com/colincooperio/garmin-mcp.git
+cd garmin-mcp
+npm install
+npx wrangler login
+cp wrangler.example.jsonc wrangler.jsonc
+```
+
+`wrangler.jsonc` is git-ignored, so your settings never get committed.
+
+#### 2. Create the KV namespace
+
+```sh
+npx wrangler kv namespace create garmin-cloud-mcp-OAUTH_KV
+```
+
+Paste the `id` it prints into `wrangler.jsonc`, replacing `YOUR_KV_NAMESPACE_ID`.
+The binding stays `OAUTH_KV`; the title just names the namespace after the
+Worker, so it can't clash with another deployment's in the same account.
+
+#### 3. Lock it to your GitHub account
+
+Open `https://api.github.com/users/<your-github-username>` and copy the numeric
+`id`. Put it in `wrangler.jsonc` as `ALLOWED_GITHUB_USER_ID`.
+
+It uses the numeric ID rather than your username because usernames can be
+changed and then claimed by someone else.
+
+#### 4. Work out your Worker's URL
+
+It will be `https://garmin-cloud-mcp.<your-subdomain>.workers.dev`. Your
+`workers.dev` subdomain is on the Workers & Pages overview in the Cloudflare
+dashboard. The server works its URL out by itself, so there's nothing to set;
+you need it for the next step. (Serving it on a custom domain as well? Set
+`MCP_RESOURCE` in `wrangler.jsonc` to the URL clients should use, with `/mcp`
+on the end.)
+
+#### 5. Create a GitHub OAuth app
+
+Go to GitHub → Settings → Developer settings → OAuth Apps → New OAuth App and
+fill in:
+
+- **Homepage URL:** `https://garmin-cloud-mcp.<your-subdomain>.workers.dev`
+- **Authorization callback URL:** `https://garmin-cloud-mcp.<your-subdomain>.workers.dev/callback`
+
+Then generate a client secret.
+
+#### 6. Create a Garmin Personal API key
+
+See [Create a Garmin Personal API key](#create-a-garmin-personal-api-key).
+
+#### 7. Store the secrets
+
+Each command prompts you to paste the value.
+
+```sh
+npx wrangler secret put GITHUB_CLIENT_ID
+npx wrangler secret put GITHUB_CLIENT_SECRET
+npx wrangler secret put COOKIE_ENCRYPTION_KEY   # paste output of: openssl rand -hex 32
+npx wrangler secret put GARMIN_API_KEY
+```
+
+If wrangler asks to create the Worker first, say yes.
+
+#### 8. Deploy
+
+```sh
+npm run deploy
+```
+
+This type-checks and runs the full test suite before it deploys. If anything
+fails, nothing ships. The test output includes a few labelled `expected` error
+lines: those come from tests that check the Worker refuses bad requests.
+
+Then [connect your AI apps](#connect-your-ai-apps).
+
+</details>
 
 ## Why this one
 
@@ -446,8 +493,10 @@ new key, then:
   app. For Claude Code, run `claude mcp remove garmin` and add it again. For
   the Claude Desktop extension, paste the new key into the extension's
   settings in Claude Desktop.
-- Cloud: run `npx wrangler secret put GARMIN_API_KEY`. It takes effect
-  immediately, and cached data is tied to the key that fetched it.
+- Cloud: run `npx wrangler secret put GARMIN_API_KEY` (or rerun
+  `npm run setup` and say yes when it asks to replace the Garmin key). It
+  takes effect immediately, and cached data is tied to the key that fetched
+  it.
 
 Then delete the old key in Garmin Connect.
 
@@ -459,9 +508,24 @@ Then delete the old key in Garmin Connect.
 - Local with `npx`: `npx` fetches the latest version each time your AI app
   starts the server, so just restart the app. To stay on a fixed version, use
   `garmin-mcp@1.3.0` in place of `garmin-mcp` in your config.
-- Cloud: `git pull`, then `npm install` and `npm run deploy`. Your
-  `wrangler.jsonc` isn't touched by updates. If `wrangler.example.jsonc` gains
-  a new setting, copy it across.
+- Cloud: run `npm run update` in the repo folder. It pulls the latest version,
+  reinstalls, lists any new settings in `wrangler.example.jsonc` that your
+  `wrangler.jsonc` lacks (it never edits your file), runs the tests and
+  deploys, then prints the old and new version. If a deploy goes wrong,
+  `npx wrangler rollback` returns to the previous one. Set up before 1.4.0?
+  Run `git pull` and `npm install` once to get `npm run update`.
+
+Watch the repo (Watch → Custom → Releases) to get an email when there's a new
+version.
+
+<details>
+<summary><b>Updating the cloud server by hand</b></summary>
+
+From the repo folder: `git pull`, then `npm install` and `npm run deploy`.
+Your `wrangler.jsonc` isn't touched by updates. If `wrangler.example.jsonc`
+gains a new setting, copy it across.
+
+</details>
 
 **Logs.** Locally, the server logs to your AI app's MCP log. In the cloud, run
 `npm run tail`, or use Workers → garmin-cloud-mcp → Logs in the Cloudflare

@@ -29,7 +29,13 @@ npm run build      # compile the stdio server to dist/ (what's published to npm 
 npm run build:mcpb # bundle it into one file and pack the Claude Desktop extension, garmin-mcp.mcpb
 npm run test:pack  # pack, install the tarball in a temp project and run its bin (also part of npm test)
 npm run dev        # the Worker on :8788 (needs .dev.vars, see .dev.vars.example)
+npm run setup      # interactive first-time cloud setup (scripts/setup.mjs)
+npm run update     # update an existing cloud deployment (scripts/update.mjs)
 ```
+
+`scripts/setup.mjs` and `scripts/update.mjs` share `scripts/lib.mjs`. They
+take their command runner, prompts and files as arguments, so
+`test/setup.test.ts` drives them with fake wrangler, git and npm output.
 
 The tests and type-check use `wrangler.example.jsonc`, so they run without a
 Cloudflare account or your own config.
@@ -53,7 +59,12 @@ the deployed Worker. `npm audit --omit=dev` is clean.
    places) and `mcpb/manifest.json`. The version-sync test fails if any of
    them disagree.
 2. Commit and push.
-3. Create a GitHub release with the tag `vX.Y.Z`.
+3. Create a GitHub release with the tag `vX.Y.Z`. Start the release notes
+   with a line for people running the cloud version, **Cloud: action
+   needed?**, saying either exactly what to do (for example a new setting to
+   copy from `wrangler.example.jsonc`, or a new secret to store) or "No: run
+   `npm run update`." Cloud users get release emails when they watch the repo,
+   so this line is what they act on.
 
 Publishing the release runs `.github/workflows/release.yml`. It checks the tag
 matches every version, runs `npm run check`, publishes to npm (with

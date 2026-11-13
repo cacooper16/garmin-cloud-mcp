@@ -1,9 +1,14 @@
-// Copy this file to wrangler.jsonc (which is git-ignored) and fill in the three
-// values marked FILL IN. See the README's setup steps.
+// Copy this file to wrangler.jsonc (which is git-ignored) and fill in the two
+// values marked FILL IN, or run `npm run setup`, which does it for you. See the
+// README's setup steps.
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "garmin-cloud-mcp",
 	"main": "src/index.ts",
+	// Serve the Worker at https://<name>.<subdomain>.workers.dev (its sign-in URL).
+	"workers_dev": true,
+	// No extra public preview URL per uploaded version: only the one URL above.
+	"preview_urls": false,
 	"compatibility_date": "2026-11-01",
 	// global_fetch_strictly_public: the Worker can't fetch private/internal
 	// addresses (SSRF hardening) and it enables Client ID Metadata Documents,
@@ -13,9 +18,11 @@
 		"global_fetch_strictly_public",
 	],
 	"vars": {
-		// FILL IN: the public URL your MCP client connects to. Every OAuth token is bound to it.
-		// https://garmin-cloud-mcp.<your-subdomain>.workers.dev/mcp
-		"MCP_RESOURCE": "https://garmin-cloud-mcp.YOUR-SUBDOMAIN.workers.dev/mcp",
+		// Optional. The public URL your MCP client connects to, which every OAuth
+		// token is bound to. Normally worked out from each request
+		// (https://<host>/mcp), so leave it unset. Set it only to pin a single URL,
+		// e.g. when the Worker also answers on a custom domain:
+		// "MCP_RESOURCE": "https://garmin.example.com/mcp",
 		// FILL IN: your numeric GitHub user ID (not your username: usernames can be
 		// renamed and re-registered). Find it at https://api.github.com/users/<username>
 		// "0" lets nobody in.
@@ -26,7 +33,8 @@
 			// Holds OAuth grants/tokens, the cached Garmin bearer token and
 			// cached past-date responses.
 			"binding": "OAUTH_KV",
-			// FILL IN: the id printed by `npx wrangler kv namespace create OAUTH_KV`
+			// FILL IN: the id printed by `npx wrangler kv namespace create garmin-cloud-mcp-OAUTH_KV`
+			// (titled after the Worker; the binding name stays OAUTH_KV)
 			"id": "YOUR_KV_NAMESPACE_ID",
 		},
 	],

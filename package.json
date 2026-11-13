@@ -43,6 +43,8 @@
 		"build": "npm run types && tsc -p tsconfig.build.json",
 		"build:mcpb": "esbuild src/stdio.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcpb/server/index.js --log-level=warning && mcpb pack mcpb garmin-mcp.mcpb",
 		"check": "npm run types && tsc --noEmit && mcpb validate mcpb/manifest.json && npm test && npm run test:e2e",
+		"setup": "node scripts/setup.mjs",
+		"update": "node scripts/update.mjs",
 		"deploy": "npm run check && wrangler deploy",
 		"tail": "wrangler tail",
 		"stdio": "node --experimental-strip-types --no-warnings src/stdio.ts",

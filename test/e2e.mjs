@@ -167,8 +167,9 @@ const mfOptions = {
 	compatibilityDate: "2026-07-30", // newest date Miniflare 4's runtime supports
 	compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
 	kvNamespaces: ["OAUTH_KV"],
+	// No MCP_RESOURCE: the Worker works out its own URL from each request, as a
+	// fresh deployment does. A later step checks MCP_RESOURCE as an override.
 	bindings: {
-		MCP_RESOURCE: `${BASE}/mcp`,
 		ALLOWED_GITHUB_USER_ID: String(ALLOWED_ID),
 		GITHUB_CLIENT_ID: "gh-client",
 		GITHUB_CLIENT_SECRET: "gh-secret",
@@ -670,6 +671,41 @@ try {
 		// 403 from our check; 401 would mean storage was reset, which proves nothing.
 		assert.equal(res.status, 403, `got ${res.status}`);
 		await mf.setOptions(mfOptions);
+	});
+
+	await step("without MCP_RESOURCE, the resource is each request's own origin + /mcp", async () => {
+		const challenge = await fetchW("/mcp", { method: "POST", body: "{}" });
+		assert.equal(challenge.status, 401);
+		const meta = challenge.headers.get("www-authenticate").match(/resource_metadata="([^"]+)"/)[1];
+		assert.ok(meta.startsWith(`${BASE}/.well-known/oauth-protected-resource`), meta);
+		assert.equal((await (await fetchW(meta)).json()).resource, `${BASE}/mcp`);
+		// Another hostname the Worker answers on gets its own resource.
+		const other = "http://127.0.0.1:9999";
+		const r = await fetchW(`${other}/.well-known/oauth-protected-resource/mcp`);
+		assert.equal((await r.json()).resource, `${other}/mcp`);
+	});
+
+	await step("MCP_RESOURCE, when set, overrides the derived URL and binds tokens to it", async () => {
+		await mf.setOptions({ ...mfOptions, bindings: { ...mfOptions.bindings, MCP_RESOURCE: "https://garmin.example.com/mcp" } });
+		try {
+			const r = await fetchW("https://garmin.example.com/.well-known/oauth-protected-resource/mcp");
+			assert.equal((await r.json()).resource, "https://garmin.example.com/mcp");
+			// On the default host, which is no longer the resource, the challenge
+			// no longer advertises metadata (the previous step got it there)...
+			const challenge = await fetchW("/mcp", { method: "POST", body: "{}" });
+			assert.equal(challenge.status, 401);
+			assert.doesNotMatch(challenge.headers.get("www-authenticate"), /resource_metadata=/);
+			// ...and the token that worked a moment ago, bound to the derived
+			// resource on this host, is refused.
+			const res = await fetchW("/mcp", {
+				method: "POST",
+				headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+				body: JSON.stringify({ jsonrpc: "2.0", id: 98, method: "tools/list" }),
+			});
+			assert.equal(res.status, 401, `got ${res.status}`);
+		} finally {
+			await mf.setOptions(mfOptions);
+		}
 	});
 
 	await step("requests without a valid token are rejected", async () => {
