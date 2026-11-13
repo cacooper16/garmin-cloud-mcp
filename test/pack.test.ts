@@ -12,6 +12,8 @@ import { StdioClient } from "./stdio-client.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+/** The manifest lists every tool (test/mcpb.test.ts checks it against the server). */
+const TOOL_COUNT: number = JSON.parse(readFileSync(join(root, "mcpb/manifest.json"), "utf8")).tools.length;
 
 function npm(args: string[], cwd: string): string {
 	return execFileSync("npm", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -70,7 +72,7 @@ describe("npm package", { timeout: 180_000 }, () => {
 		assert.ok(!existsSync(join(nm, "garmin-mcp/src")), "sources should not be published");
 	});
 
-	it("serves all 26 tools from the installed bin", async () => {
+	it("serves every tool from the installed bin", async () => {
 		client = new StdioClient(join(project, "node_modules/.bin/garmin-mcp"), [], project);
 		const init = await client.request("initialize", {
 			protocolVersion: "2025-06-18",
@@ -82,7 +84,7 @@ describe("npm package", { timeout: 180_000 }, () => {
 		client.notify("notifications/initialized");
 
 		const res = await client.request("tools/list");
-		assert.equal(res.result.tools.length, 26);
+		assert.equal(res.result.tools.length, TOOL_COUNT);
 		assert.match(client.stderr, /garmin-mcp: running on stdio/);
 	});
 });

@@ -27,7 +27,7 @@ const MIN_PARTIAL = 0.01;
  */
 const ELEVATION_HYSTERESIS_M = 1.5;
 
-const BEST_EFFORTS: [label: string, metres: number][] = [
+export const BEST_EFFORTS: [label: string, metres: number][] = [
 	["1 km", 1000],
 	["1 mile", MILE],
 	["5 km", 5000],
@@ -430,6 +430,9 @@ export interface AnalysisSource {
 	putCached(name: string, value: unknown): Promise<void>;
 }
 
+/** Name an activity's analysis is cached under (see GarminClient.getCached). */
+export const analysisCacheName = (activityId: string) => `analysis:v${ANALYSIS_VERSION}:${activityId}`;
+
 /** Either the analysis, or a short reason it can't be produced (not an error). */
 export type Loaded = { analysis: Analysis } | { unavailable: string };
 
@@ -443,7 +446,7 @@ const NO_FILE =
  * `unavailable` rather than throwing.
  */
 export async function loadAnalysis(src: AnalysisSource, activityId: string): Promise<Loaded> {
-	const cacheName = `analysis:v${ANALYSIS_VERSION}:${activityId}`;
+	const cacheName = analysisCacheName(activityId);
 	const cached = await src.getCached<Analysis>(cacheName);
 	if (cached?.v === ANALYSIS_VERSION) return { analysis: cached };
 
@@ -537,7 +540,7 @@ export function clock(seconds: number): string {
 	return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
 }
 
-function pace(metres: number, seconds: number, unit: Unit): string | undefined {
+export function pace(metres: number, seconds: number, unit: Unit): string | undefined {
 	if (metres <= 0 || seconds <= 0) return undefined;
 	return `${clock((seconds / metres) * (unit === "km" ? KM : MILE))} /${unit === "km" ? "km" : "mi"}`;
 }

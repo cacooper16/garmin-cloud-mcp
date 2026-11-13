@@ -7,6 +7,8 @@ import { StdioClient } from "./stdio-client.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+/** The manifest lists every tool (test/mcpb.test.ts checks it against the server). */
+const TOOL_COUNT: number = JSON.parse(readFileSync(new URL("../mcpb/manifest.json", import.meta.url), "utf8")).tools.length;
 
 describe("MemoryKV", () => {
 	it("stores, returns and deletes values", async () => {
@@ -66,10 +68,10 @@ describe("stdio server", () => {
 
 	after(() => client.close());
 
-	it("lists 26 read-only tools", async () => {
+	it("lists every tool, all read-only", async () => {
 		const res = await client.request("tools/list");
 		const tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] = res.result.tools;
-		assert.equal(tools.length, 26);
+		assert.equal(tools.length, TOOL_COUNT);
 		for (const t of tools) assert.equal(t.annotations?.readOnlyHint, true, `${t.name} should be read-only`);
 	});
 
@@ -86,6 +88,6 @@ describe("stdio server", () => {
 		assert.equal(res.result?.isError, true);
 
 		const again = await client.request("tools/list");
-		assert.equal(again.result.tools.length, 26);
+		assert.equal(again.result.tools.length, TOOL_COUNT);
 	});
 });

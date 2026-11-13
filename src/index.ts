@@ -6,10 +6,18 @@ import { isAllowedUser } from "./allowlist.ts";
 import { GitHubHandler, type Props } from "./github-handler.ts";
 import { createGarminServer } from "./server.ts";
 
+/**
+ * get_personal_bests downloads one FIT file per uncached activity. Cloudflare's
+ * free plan allows 50 outbound requests per request (and little CPU), so the
+ * Worker downloads at most this many per call; the rest come on the next call.
+ */
+const WORKER_MAX_DOWNLOADS_PER_CALL = 15;
+
 // One server (and Garmin client) per request; the bearer token cache lives at module/KV level.
 function createServer() {
 	return createGarminServer(
 		() => new GarminClient({ apiKey: env.GARMIN_API_KEY, kv: env.OAUTH_KV, cacheResponses: true }),
+		{ personalBests: { maxDownloads: WORKER_MAX_DOWNLOADS_PER_CALL } },
 	);
 }
 

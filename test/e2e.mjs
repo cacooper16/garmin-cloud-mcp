@@ -622,6 +622,24 @@ try {
 		assert.match(JSON.parse(missing.json.result.content[0].text).unavailable, /no original file/);
 	});
 
+	await step("get_personal_bests in the Worker downloads at most 15 files per call and says the rest come next call", async () => {
+		const before = garminCalls.length;
+		const { json } = await mcp(
+			accessToken,
+			"tools/call",
+			{ name: "get_personal_bests", arguments: { start_date: "2026-07-01", end_date: "2026-07-31", distances: ["1 km"] } },
+			session,
+		);
+		assert.ok(!json.result.isError, json.result.content?.[0]?.text);
+		const r = JSON.parse(json.result.content[0].text);
+		const downloads = garminCalls.slice(before).filter((c) => c.startsWith("/download-service"));
+		assert.equal(downloads.length, 15, "Cloudflare's free plan allows 50 outbound requests per request");
+		// Activity 77 was analysed (and cached) by the previous step, so it comes free.
+		assert.equal(r.activities_analysed, 16);
+		assert.equal(r.personal_bests[0].time, "4:10");
+		assert.ok(r.notes.some((n) => /134 of 150 activities weren't analysed yet/.test(n)), r.notes.join("\n"));
+	});
+
 	await step("prompt templates are listed", async () => {
 		const { json } = await mcp(accessToken, "prompts/list", {}, session);
 		const names = json.result.prompts.map((p) => p.name);

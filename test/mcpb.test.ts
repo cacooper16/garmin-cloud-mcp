@@ -78,7 +78,7 @@ describe("mcpb bundle", { timeout: 120_000 }, () => {
 		assert.ok(existsSync(join(root, "mcpb/server/index.js")));
 	});
 
-	it("serves 26 tools and 5 prompts from the single bundled file", async () => {
+	it("serves every tool and prompt from the single bundled file", async () => {
 		// StdioClient passes only PATH and GARMIN_API_KEY=dummy, and the bundle
 		// sits outside node_modules: proves nothing else is needed at runtime.
 		client = new StdioClient(process.execPath, ["mcpb/server/index.js"], root);
@@ -90,7 +90,7 @@ describe("mcpb bundle", { timeout: 120_000 }, () => {
 		assert.equal(init.result?.serverInfo?.version, manifest.version);
 		client.notify("notifications/initialized");
 
-		assert.equal((await client.request("tools/list")).result.tools.length, 26);
-		assert.equal((await client.request("prompts/list")).result.prompts.length, 5);
+		assert.equal((await client.request("tools/list")).result.tools.length, manifest.tools.length);
+		assert.equal((await client.request("prompts/list")).result.prompts.length, manifest.prompts.length);
 	});
 });

@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { compactActivity, summarizeActivities, trainingLoadRatio } from "./activities.ts";
-import { formatAnalysis, type HrZones, loadAnalysis, SECTIONS, type Unit, zonesFromApi } from "./analysis.ts";
+import { BEST_EFFORTS, formatAnalysis, type HrZones, loadAnalysis, SECTIONS, type Unit, zonesFromApi } from "./analysis.ts";
 import {
 	compactActivityDetail,
 	compactBodyBattery,
@@ -13,6 +13,7 @@ import {
 	stripNoise,
 } from "./compact.ts";
 import { GarminApiError, type GarminClient } from "./garmin.ts";
+import { type LoadLimits, loadMany, PB_DISTANCES, personalBests, PREDICTION_WINDOW_DAYS, racePredictions } from "./records.ts";
 import { PERIODS, type Period, resolvePeriod, todayIn } from "./periods.ts";
 import { addDays, daysBetween, mapLimit, mergeChunks, splitRange } from "./ranges.ts";
 import { localizeTimes } from "./times.ts";
@@ -138,7 +139,26 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 
 // ---- tools --------------------------------------------------------------
 
-export function registerGarminTools(server: McpServer, garmin: () => GarminClient) {
+/** Limits that differ between the local server and the Worker. */
+export interface ToolOptions {
+	/** get_personal_bests: activity analyses per call (see records.ts). */
+	personalBests?: Partial<LoadLimits>;
+}
+
+/**
+ * Local default: up to 150 activities per call, with no download cap beyond
+ * that and a time budget so the call returns before MCP clients give up
+ * (their default timeout is about 60s). The Worker passes a lower download
+ * cap: Cloudflare limits outbound requests and CPU time per request.
+ */
+export const PERSONAL_BESTS_LIMITS: LoadLimits = {
+	maxActivities: 150,
+	maxDownloads: 150,
+	timeBudgetMs: 40_000,
+	concurrency: 3,
+};
+
+export function registerGarminTools(server: McpServer, garmin: () => GarminClient, options: ToolOptions = {}) {
 	type Req = { path: string; params?: Record<string, string> };
 	type RangeOpts = {
 		/** Garmin's own per-call limit for this endpoint; longer ranges are split and fetched in parallel. */
@@ -738,6 +758,114 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 			}),
 	);
 
+	/** km or mile: the explicit choice, else the user's Garmin unit setting. */
+	const unitFor = async (unit?: Unit): Promise<Unit> => {
+		// Garmin's measurementSystem is "metric", "statute_us" or "statute_uk" (miles).
+		const system = (await settings()).measurementSystem;
+		return unit ?? (typeof system === "string" && system.startsWith("statute") ? "mile" : "km");
+	};
+
+	const pbLimits: LoadLimits = { ...PERSONAL_BESTS_LIMITS, ...options.personalBests };
+	server.registerTool(
+		"get_personal_bests",
+		{
+			title: "Personal bests and race estimates",
+			description:
+				"Fastest 1 km, 1 mile, 5 km, 10 km, half and marathon across many activities, each with date, activity, pace, avg HR and the next two best efforts; " +
+				"plus race time estimates for 5 km to marathon from the last 90 days of the range: your actual time where you ran the distance, otherwise Riegel from the effort closest in distance. " +
+				"Use for 'what's my 5k PB', 'fastest half this year', 'what could I run a 10k in'. " +
+				"These are computed from the user's activity files (fastest continuous stretch within each run), NOT Garmin's official personal records, which the Personal API doesn't provide; " +
+				"estimates are estimates, not Garmin's race predictor. " +
+				`Analyses the newest ${pbLimits.maxActivities} matching activities per call. The first call over a long range is slow (each activity's file is downloaded once, then cached); ` +
+				"if the result says some weren't analysed yet, calling again continues where it stopped. Defaults to the last 365 days and running.",
+			inputSchema: z.object({
+				period,
+				start_date: isoDate.optional().describe("First day, YYYY-MM-DD, inclusive. Defaults to 365 days ago."),
+				end_date: isoDate.optional().describe("Last day, YYYY-MM-DD, inclusive. Defaults to today."),
+				activity_type: z
+					.string()
+					.regex(/^[a-z_]+$/)
+					.default("running")
+					.describe("Parent type key, e.g. running (includes trail and treadmill), walking, hiking."),
+				distances: z
+					.array(z.enum(PB_DISTANCES))
+					.min(1)
+					.optional()
+					.describe("Distances to report. Defaults to all six."),
+				unit: z.enum(["km", "mile"]).optional().describe("Pace unit. Defaults to the user's Garmin unit setting."),
+			}),
+			annotations: { ...READ_ONLY, title: "Personal bests and race estimates" },
+		},
+		(args) =>
+			run(async () => {
+				const [s, e] =
+					args.period || args.start_date
+						? await resolveDates(args, 100_000, { openEnd: true })
+						: resolvePeriod("last_365_days", await userToday());
+				const distances = args.distances ?? PB_DISTANCES;
+				const g = garmin();
+				const { list, capped } = await fetchActivities(g, {
+					...filterParams({ activity_type: args.activity_type, start_date: s, end_date: e }),
+					sortBy: "startLocal",
+					sortOrder: "desc",
+				});
+				// Only activities long enough for a requested distance (or a race
+				// estimate) are worth a download; manual entries have no file.
+				const shortest = Math.min(...distances.map((d) => BEST_EFFORTS.find(([l]) => l === d)![1]), 3000);
+				let manual = 0;
+				const eligible = list
+					.filter((a) => {
+						if (a.manualActivity === true) return (manual++, false);
+						return (typeof a.distance === "number" ? a.distance : 0) >= shortest - 1;
+					})
+					.sort((a, b) => String(b.startTimeLocal ?? "").localeCompare(String(a.startTimeLocal ?? "")));
+				const chosen = eligible.slice(0, pbLimits.maxActivities);
+				const loaded = await loadMany(g, chosen, pbLimits, { describe: errorText });
+				const unit = await unitFor(args.unit);
+				const predictFrom = addDays(e, -(PREDICTION_WINDOW_DAYS - 1));
+
+				const notes: string[] = [];
+				if (loaded.rateLimited) {
+					notes.push(
+						`Garmin rate-limited the file downloads (HTTP 429), so these results cover ${loaded.runs.length} of ${chosen.length} activities. ` +
+							"Wait a minute and ask again: finished analyses are cached, so it continues where it stopped.",
+					);
+				} else if (loaded.deferred) {
+					notes.push(
+						`${loaded.deferred} of ${chosen.length} activities weren't analysed yet (per-call time or download limit). ` +
+							"Ask again to continue: finished analyses are cached, so each call gets further.",
+					);
+				}
+				if (eligible.length > chosen.length || capped) {
+					notes.push(
+						`${capped ? "Over 1000" : eligible.length} matching activities; analysed the newest ${chosen.length} (back to ${chosen.at(-1)?.startTimeLocal?.toString().slice(0, 10)}). ` +
+							"For older records, ask about a shorter or earlier range.",
+					);
+				}
+				const noFile = manual + loaded.noFile;
+				if (noFile) notes.push(`${noFile} activities skipped: no FIT file (manual entries or GPX/TCX imports).`);
+				if (loaded.failed) notes.push(`${loaded.failed} activities couldn't be read: ${loaded.firstError}`);
+
+				return {
+					start_date: s,
+					end_date: e,
+					activity_type: args.activity_type,
+					activities_analysed: loaded.runs.length,
+					personal_bests: loaded.runs.length
+						? personalBests(loaded.runs, distances, unit)
+						: `no ${args.activity_type} activities with a FIT file in this range`,
+					race_estimates: {
+						note:
+							`From efforts since ${predictFrom}. basis 'actual': you ran that distance, so your best time there is shown. ` +
+							"basis 'riegel': estimated (T2 = T1 x (D2/D1)^1.06) from your fastest effort at the closest distance you ran, within 4x. Estimates, not Garmin's race predictor.",
+						estimates: racePredictions(loaded.runs, predictFrom, unit),
+					},
+					source: "computed from your activity files, not Garmin's official records",
+					notes: notes.length ? notes : undefined,
+				};
+			}),
+	);
+
 	const ACTIVITY = (id: string) => `/activity-service/activity/${id}`;
 	server.registerTool(
 		"get_activity",
@@ -836,9 +964,7 @@ export function registerGarminTools(server: McpServer, garmin: () => GarminClien
 				const loaded = await loadAnalysis(g, activity_id);
 				if ("unavailable" in loaded) return { activity_id, unavailable: loaded.unavailable };
 				const a = loaded.analysis;
-				// Garmin's measurementSystem is "metric", "statute_us" or "statute_uk" (miles).
-				const system = (await settings()).measurementSystem;
-				const resolvedUnit: Unit = unit ?? (typeof system === "string" && system.startsWith("statute") ? "mile" : "km");
+				const resolvedUnit = await unitFor(unit);
 				let zones: HrZones | undefined;
 				let zonesUnavailable: string | undefined;
 				// Current zones are only needed when the FIT file didn't record its own.
