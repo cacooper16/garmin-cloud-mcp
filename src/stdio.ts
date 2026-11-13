@@ -19,7 +19,9 @@
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createLocalKV } from "./file-kv.ts";
 import { GarminClient } from "./garmin.ts";
-import { createGarminServer } from "./server.ts";
+import { detectInstall } from "./install.ts";
+import { createGarminServer, SERVER_VERSION } from "./server.ts";
+import { optedOut, UpdateCheck } from "./update.ts";
 
 const apiKey = process.env.GARMIN_API_KEY ?? "";
 if (!apiKey.trim()) {
@@ -31,6 +33,18 @@ if (!apiKey.trim()) {
 // Derived data (analyses, settled past-date responses) is cached on disk so it
 // survives restarts; the bearer token is only ever held in memory.
 const { kv, dir } = createLocalKV(process.env);
-const server = createGarminServer(() => new GarminClient({ apiKey, kv, cacheResponses: true }));
+
+// Update notice: a daily, background download of a small version file from
+// GitHub (see update.ts). Off with GARMIN_MCP_NO_UPDATE_CHECK=1, and skipped
+// when running from a source checkout.
+const install = await detectInstall(process.env, process.argv[1] ?? "", SERVER_VERSION).catch(() => undefined);
+const update =
+	install && !optedOut(process.env.GARMIN_MCP_NO_UPDATE_CHECK)
+		? new UpdateCheck({ current: SERVER_VERSION, install, kv })
+		: undefined;
+await update?.load();
+
+const server = createGarminServer(() => new GarminClient({ apiKey, kv, cacheResponses: true }), { update });
 await server.connect(new StdioServerTransport());
+void update?.refresh();
 console.error(`garmin-mcp: running on stdio (${dir ? `cache: ${dir}` : "cache in memory only"})`);

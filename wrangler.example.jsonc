@@ -23,6 +23,9 @@
 		// (https://<host>/mcp), so leave it unset. Set it only to pin a single URL,
 		// e.g. when the Worker also answers on a custom domain:
 		// "MCP_RESOURCE": "https://garmin.example.com/mcp",
+		// Optional. Turns off the daily update check (a download of a small
+		// version file from GitHub; see the README's Security model):
+		// "GARMIN_MCP_NO_UPDATE_CHECK": "1",
 		// FILL IN: your numeric GitHub user ID (not your username: usernames can be
 		// renamed and re-registered). Find it at https://api.github.com/users/<username>
 		// "0" lets nobody in.

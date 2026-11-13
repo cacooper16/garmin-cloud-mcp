@@ -12,7 +12,8 @@ export class StdioClient {
 		this.proc = spawn(command, args, {
 			cwd,
 			// Only PATH and the key: proves nothing else (Cloudflare, GitHub) is needed.
-			env: { PATH: process.env.PATH ?? "", GARMIN_API_KEY: "dummy" },
+			// No update check, so tests never reach GitHub.
+			env: { PATH: process.env.PATH ?? "", GARMIN_API_KEY: "dummy", GARMIN_MCP_NO_UPDATE_CHECK: "1" },
 		});
 		this.proc.stdout.setEncoding("utf8");
 		this.proc.stdout.on("data", (chunk: string) => {

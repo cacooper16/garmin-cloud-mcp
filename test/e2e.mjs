@@ -24,6 +24,7 @@ const ALLOWED_ID = 1234567;
 
 let githubUserId = ALLOWED_ID;
 const garminCalls = [];
+const updateChecks = [];
 
 const jwt = (exp) => {
 	const b = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
@@ -38,6 +39,10 @@ async function outbound(req) {
 	if (url.href === "https://api.github.com/user") {
 		assert.equal(req.headers.get("authorization"), "Bearer gho_fake");
 		return Response.json({ id: githubUserId, login: githubUserId === ALLOWED_ID ? "allowed-user" : "stranger" });
+	}
+	if (url.href === "https://github.com/colincooperio/garmin-mcp/releases/latest/download/latest-cloud.json") {
+		updateChecks.push(req.headers.get("user-agent"));
+		return Response.json({ latest: "9.9.9", url: "https://github.com/colincooperio/garmin-mcp/releases/tag/v9.9.9" });
 	}
 	if (url.host === "personal.connectapi.garmin.com") {
 		garminCalls.push(url.pathname + url.search);
@@ -170,6 +175,8 @@ const mfOptions = {
 	// No MCP_RESOURCE: the Worker works out its own URL from each request, as a
 	// fresh deployment does. A later step checks MCP_RESOURCE as an override.
 	bindings: {
+		// Off for most steps, so results keep their usual shape; one step turns it on.
+		GARMIN_MCP_NO_UPDATE_CHECK: "1",
 		ALLOWED_GITHUB_USER_ID: String(ALLOWED_ID),
 		GITHUB_CLIENT_ID: "gh-client",
 		GITHUB_CLIENT_SECRET: "gh-secret",
@@ -647,6 +654,31 @@ try {
 		assert.match(r.status, /^Partial: 16 of 150 runs analysed so far\. Call again to continue/);
 		assert.equal(r.provisional_personal_bests[0].time, "4:10");
 		assert.equal(r.personal_bests, undefined, "partial results aren't presented as final");
+	});
+
+	await step("update check: off when opted out; on, it's a daily background download and a once-a-day notice", async () => {
+		assert.equal(updateChecks.length, 0, "GARMIN_MCP_NO_UPDATE_CHECK=1 makes no request");
+		const { GARMIN_MCP_NO_UPDATE_CHECK, ...on } = mfOptions.bindings;
+		await mf.setOptions({ ...mfOptions, bindings: on });
+		try {
+			const call = async () => {
+				const { json } = await mcp(accessToken, "tools/call", { name: "get_readiness", arguments: { date: "2026-07-20" } }, session);
+				assert.ok(!json.result.isError, json.result.content?.[0]?.text);
+				return JSON.parse(json.result.content[0].text);
+			};
+			const results = [];
+			for (let i = 0; i < 4; i++) results.push(await call());
+			const notices = results.filter((r) => r.update_available).map((r) => r.update_available);
+			assert.equal(notices.length, 1, "once a day");
+			assert.equal(notices[0].latest, "9.9.9");
+			assert.equal(notices[0].how_to_update, "Run npm run update in your garmin-mcp folder.");
+			assert.equal(notices[0].release, "https://github.com/colincooperio/garmin-mcp/releases/tag/v9.9.9");
+			assert.equal(Object.keys(results.find((r) => r.update_available))[0], "update_available");
+			assert.equal(updateChecks.length, 1, "checked once, not per request");
+			assert.equal(updateChecks[0], "garmin-mcp-update-check");
+		} finally {
+			await mf.setOptions(mfOptions);
+		}
 	});
 
 	await step("prompt templates are listed", async () => {

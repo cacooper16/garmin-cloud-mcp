@@ -18,6 +18,7 @@ import { type LoadLimits, loadMany, PB_DISTANCES, personalBests, PREDICTION_WIND
 import { PERIODS, type Period, resolvePeriod, todayIn } from "./periods.ts";
 import { addDays, daysBetween, mapLimit, mergeChunks, splitRange } from "./ranges.ts";
 import { localizeTimes } from "./times.ts";
+import type { UpdateNotice } from "./update.ts";
 import { isObj } from "./util.ts";
 import { buildReadiness, joinByDate, summarizeWellness } from "./wellness.ts";
 
@@ -130,12 +131,33 @@ function formatError(err: unknown): ToolResult {
 	return { content: [{ type: "text", text: msg }], isError: true };
 }
 
-async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
+/** The update check's side of a tool call (see update.ts). */
+export interface UpdateHook {
+	/** The notice for this result, or undefined; never waits on the network. */
+	notice(): Promise<UpdateNotice | undefined>;
+	/** One line for the server instructions when an update is already known. */
+	instructionsLine(): string | undefined;
+}
+
+/**
+ * Puts update_available first in a successful result. Objects get the field
+ * added; anything else (a list, a string) is wrapped as {update_available, result}.
+ */
+export function withNotice(data: unknown, notice: UpdateNotice | undefined): unknown {
+	if (!notice) return data;
+	return isObj(data) ? { update_available: notice, ...data } : { update_available: notice, result: data };
+}
+
+async function runTool(fn: () => Promise<unknown>, update?: UpdateHook): Promise<ToolResult> {
+	let data: unknown;
 	try {
-		return formatResult(await fn());
+		data = await fn();
 	} catch (err) {
 		return formatError(err);
 	}
+	// Only successful results carry the notice; a failed check is never an error.
+	const notice = await update?.notice().catch(() => undefined);
+	return formatResult(withNotice(data, notice));
 }
 
 // ---- tools --------------------------------------------------------------
@@ -144,6 +166,8 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 export interface ToolOptions {
 	/** get_personal_bests: activity analyses per call (see records.ts). */
 	personalBests?: Partial<LoadLimits>;
+	/** Update notice on the first result of a session (local) or day (cloud). */
+	update?: UpdateHook;
 }
 
 /**
@@ -160,6 +184,7 @@ export const PERSONAL_BESTS_LIMITS: LoadLimits = {
 };
 
 export function registerGarminTools(server: McpServer, garmin: () => GarminClient, options: ToolOptions = {}) {
+	const run = (fn: () => Promise<unknown>) => runTool(fn, options.update);
 	type Req = { path: string; params?: Record<string, string> };
 	type RangeOpts = {
 		/** Garmin's own per-call limit for this endpoint; longer ranges are split and fetched in parallel. */

@@ -34,7 +34,11 @@ const INSTRUCTIONS =
  * tool call, so listing tools and prompts never needs a real API key.
  */
 export function createGarminServer(makeClient: () => GarminClient, options: ToolOptions = {}): McpServer {
-	const server = new McpServer({ name: "garmin", version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
+	const updateLine = options.update?.instructionsLine();
+	const server = new McpServer(
+		{ name: "garmin", version: SERVER_VERSION },
+		{ instructions: updateLine ? `${INSTRUCTIONS} ${updateLine}` : INSTRUCTIONS },
+	);
 
 	let client: GarminClient | undefined;
 	registerGarminTools(server, () => {

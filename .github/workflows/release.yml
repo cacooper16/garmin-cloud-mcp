@@ -87,10 +87,24 @@ jobs:
         with:
           subject-path: garmin-mcp.mcpb
 
-      - name: Attach the Claude Desktop extension
+      # The update check downloads one of these once a day (latest-mcpb.json
+      # from the Desktop extension, latest-npx.json from npx and npm installs,
+      # latest-cloud.json from the Worker); GitHub's per-asset download
+      # counts are the rough install numbers. See src/update.ts.
+      - name: Write the update-check version files
+        env:
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        run: |
+          set -euo pipefail
+          for type in mcpb npx cloud; do
+            jq -n --arg latest "${TAG#v}" --arg url "$RELEASE_URL" '{latest: $latest, url: $url}' > "latest-$type.json"
+            cat "latest-$type.json"
+          done
+
+      - name: Attach the Claude Desktop extension and version files
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" garmin-mcp.mcpb --clobber
+        run: gh release upload "$TAG" garmin-mcp.mcpb latest-mcpb.json latest-npx.json latest-cloud.json --clobber
 
       # The registry checks the version exists on npm, and a just-published
       # version can take a minute or two to appear there.

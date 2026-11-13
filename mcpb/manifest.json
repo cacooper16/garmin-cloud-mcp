@@ -24,7 +24,9 @@
 			"command": "node",
 			"args": ["${__dirname}/server/index.js"],
 			"env": {
-				"GARMIN_API_KEY": "${user_config.garmin_api_key}"
+				"GARMIN_API_KEY": "${user_config.garmin_api_key}",
+				"GARMIN_MCP_INSTALL": "mcpb",
+				"GARMIN_MCP_NO_UPDATE_CHECK": "${user_config.disable_update_check}"
 			}
 		}
 	},
@@ -35,6 +37,13 @@
 			"description": "Create one in Garmin Connect > Settings > Personal API Token. Pick 1 year.",
 			"sensitive": true,
 			"required": true
+		},
+		"disable_update_check": {
+			"type": "boolean",
+			"title": "Turn off the daily update check",
+			"description": "Once a day the extension downloads a tiny version file from GitHub to tell you about new versions. Nothing about you or your data is sent.",
+			"default": false,
+			"required": false
 		}
 	},
 	"tools": [

@@ -79,6 +79,22 @@ provenance) and the MCP Registry, and attaches `garmin-mcp.mcpb`, with a signed 
 release. It needs no tokens: npm and the MCP Registry both authenticate with
 GitHub's OIDC token.
 
+The release workflow also attaches `latest-mcpb.json`, `latest-npx.json` and
+`latest-cloud.json` (`{"latest": "<version>", "url": "<release url>"}`). The
+server's daily update check downloads the one for its install type, so their
+download counts are a rough count of active installs by type (each counts at
+most once a day per install). To read them:
+
+```sh
+gh api repos/colincooperio/garmin-mcp/releases --jq '.[] | {tag: .tag_name, assets: [.assets[] | {name, download_count}]}'
+```
+
+Counts are per release: an install keeps downloading from whichever release
+is latest, so after a new release the counts start again on that one.
+Unpinned `npx` installs are counted but never shown the notice. Turning the
+check off (`GARMIN_MCP_NO_UPDATE_CHECK=1`) also removes an install from the
+counts.
+
 One-time setup: on npmjs.com, open the `garmin-mcp` package's settings and add
 a trusted publisher for GitHub Actions with this repository and the workflow
 filename `release.yml`.

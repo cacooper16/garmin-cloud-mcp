@@ -160,9 +160,10 @@ file, and your key is stored in your system keychain.
 
 Claude Desktop warns before installing it. It shows that warning for every
 extension that isn't installed from Anthropic's directory, not because of
-anything in this one. This extension only connects to Garmin's API, and its
-source is all in this repo. To check that your download was built from this
-repo by its release workflow, and not changed since, run this with the
+anything in this one. This extension only connects to Garmin's API (plus a
+daily version check on GitHub; see [Security model](#both)), and its source is
+all in this repo. To check that your download was built from this repo by its
+release workflow, and not changed since, run this with the
 [GitHub CLI](https://cli.github.com):
 
 ```sh
@@ -560,7 +561,9 @@ new key, then:
 
 Then delete the old key in Garmin Connect.
 
-**Updating.**
+**Updating.** When a new version is out, your AI app mentions it once, with
+how to update your kind of install (see the update check in
+[Security model](#both)).
 
 - Claude Desktop extension: download the new
   [garmin-mcp.mcpb](https://github.com/colincooperio/garmin-mcp/releases/latest/download/garmin-mcp.mcpb)
@@ -611,6 +614,20 @@ compact answer is missing it: please [open an issue](CONTRIBUTING.md#reporting-i
 - **Your data's path.** Garmin → your computer or your Worker → your AI app. It
   ends up in whichever chats you use the tools in, under that provider's data
   policies.
+- **Update check.** The only other network request is a daily download of a
+  small version file (`latest-mcpb.json`, `latest-npx.json` or
+  `latest-cloud.json`, a few bytes saying the latest version number) from this
+  project's GitHub releases. It's at most once a day, in the background, and
+  never slows a tool call. GitHub counts each download, which is how the
+  project sees roughly how many installs there are, by type. Nothing about you
+  or your Garmin data is sent: no key, no account, no identifier, just a plain
+  download with a generic User-Agent, so GitHub sees the IP address it comes
+  from (your computer's, or Cloudflare's for the cloud version). If a newer
+  version exists, your AI app mentions it once. To turn it off, set
+  `GARMIN_MCP_NO_UPDATE_CHECK=1`: locally in the same `env` block as
+  `GARMIN_API_KEY`; in the cloud as a var in `wrangler.jsonc` (it's there,
+  commented out), then redeploy; in the Claude Desktop extension, tick "Turn
+  off the daily update check" in its settings.
 
 ### Local
 

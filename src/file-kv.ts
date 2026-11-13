@@ -27,10 +27,11 @@ const SUFFIX = ".json";
 
 /**
  * Keys that may be written to disk: cached Garmin responses and derived
- * values (analyses), both already keyed by a hash of the API key. Anything
+ * values (analyses), both already keyed by a hash of the API key, and the
+ * update check's result (a version number and a date). Anything
  * else (notably `garmin:token:*`, the bearer token) is kept in memory only.
  */
-export const DISK_PREFIXES = ["garmin:resp:", "garmin:derived:"] as const;
+export const DISK_PREFIXES = ["garmin:resp:", "garmin:derived:", "garmin:update:"] as const;
 
 export const isDiskKey = (key: string) => DISK_PREFIXES.some((p) => key.startsWith(p));
 

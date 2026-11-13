@@ -5,7 +5,8 @@ import { GarminClient } from "./garmin.ts";
 import { isAllowedUser } from "./allowlist.ts";
 import { mcpResource } from "./resource.ts";
 import { GitHubHandler, type Props } from "./github-handler.ts";
-import { createGarminServer } from "./server.ts";
+import { createGarminServer, SERVER_VERSION } from "./server.ts";
+import { optedOut, UpdateCheck } from "./update.ts";
 
 /**
  * get_personal_bests downloads one FIT file per uncached activity. Cloudflare's
@@ -14,11 +15,24 @@ import { createGarminServer } from "./server.ts";
  */
 const WORKER_MAX_DOWNLOADS_PER_CALL = 15;
 
+/**
+ * Update notice (see update.ts): checked at most daily in the background via
+ * waitUntil, cached in KV, shown on the first tool result of each day. Off
+ * with GARMIN_MCP_NO_UPDATE_CHECK = "1" in wrangler.jsonc's vars.
+ */
+const update = new UpdateCheck({
+	current: SERVER_VERSION,
+	install: { type: "cloud" },
+	kv: env.OAUTH_KV,
+	perDay: true,
+	disabled: optedOut((env as Env & { GARMIN_MCP_NO_UPDATE_CHECK?: string }).GARMIN_MCP_NO_UPDATE_CHECK),
+});
+
 // One server (and Garmin client) per request; the bearer token cache lives at module/KV level.
 function createServer() {
 	return createGarminServer(
 		() => new GarminClient({ apiKey: env.GARMIN_API_KEY, kv: env.OAUTH_KV, cacheResponses: true }),
-		{ personalBests: { maxDownloads: WORKER_MAX_DOWNLOADS_PER_CALL } },
+		{ personalBests: { maxDownloads: WORKER_MAX_DOWNLOADS_PER_CALL }, update },
 	);
 }
 
@@ -33,6 +47,8 @@ const apiHandler = {
 		if (!isAllowedUser(props?.githubId, bindings.ALLOWED_GITHUB_USER_ID)) {
 			return new Response("Forbidden", { status: 403 });
 		}
+		// Never delays the response: the check finishes after it, if it runs at all.
+		ctx.waitUntil(update.refresh());
 		return mcpHandler(request, bindings, ctx);
 	},
 } satisfies ExportedHandler<Env>;
