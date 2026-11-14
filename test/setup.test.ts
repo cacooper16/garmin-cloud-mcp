@@ -440,11 +440,13 @@ describe("npm run update", () => {
 
 	function updateWorld(extra: Record<string, Handler | Result> = {}, files: Record<string, string> = {}) {
 		let w: ReturnType<typeof world>;
+		let commit = "aaa111";
 		w = world(
 			{
 				"git remote get-url origin": { code: 0, stdout: "https://github.com/colincooperio/garmin-mcp.git\n" },
 				"git status --porcelain --untracked-files=no": { code: 0, stdout: "" },
-				"git pull --ff-only": () => (w.store.set("package.json", pkg("1.4.0")), { code: 0 }),
+				"git rev-parse HEAD": () => ({ code: 0, stdout: `${commit}\n` }),
+				"git pull --ff-only": () => (w.store.set("package.json", pkg("1.4.0")), (commit = "bbb222"), { code: 0 }),
 				"npm ci": { code: 0 },
 				"npm run check": { code: 0 },
 				"wrangler deploy": { code: 0 },
@@ -465,14 +467,35 @@ describe("npm run update", () => {
 				"git remote get-url origin",
 				`git remote set-url origin ${NEW_REMOTE}`,
 				"git status --porcelain --untracked-files=no",
+				"git rev-parse HEAD",
 				"git pull --ff-only",
 				"npm ci",
+				"git rev-parse HEAD",
 				"npm run check",
 				"wrangler deploy",
 			],
 		);
 		assert.ok(term.printed.some((p) => p.includes("Updated: 1.3.0 -> 1.4.0")));
+		assert.ok(term.printed.some((p) => p.includes("npx wrangler rollback")));
 		assert.equal(w.store.get("wrangler.jsonc"), userConfig, "never edits wrangler.jsonc");
+	});
+
+	it("says it's already up to date when the pull brought nothing, and still redeploys", async () => {
+		const w = updateWorld({ "git pull --ff-only": { code: 0 } }, { "package.json": pkg("1.4.0") });
+		const term = io([]);
+		assert.deepEqual(await runUpdate({ run: w.run, io: term, files: w.files }), { from: "1.4.0", to: "1.4.0" });
+		const out = term.printed.join("\n");
+		assert.match(out, /Already up to date: redeployed 1\.4\.0\./);
+		assert.doesNotMatch(out, /Updated:/);
+		assert.match(out, /npx wrangler rollback/);
+		assert.ok(w.calls.some((c) => c.args.includes("deploy")));
+	});
+
+	it("says Updated when the pull brought commits but the version is the same", async () => {
+		const w = updateWorld({}, { "package.json": pkg("1.4.0") });
+		const term = io([]);
+		await runUpdate({ run: w.run, io: term, files: w.files });
+		assert.match(term.printed.join("\n"), /Updated: 1\.4\.0 -> 1\.4\.0\./);
 	});
 
 	it("refuses to continue with uncommitted changes to tracked files", async () => {

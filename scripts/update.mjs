@@ -8,6 +8,12 @@ import { CONFIG, confirm, describeFailure, EXAMPLE, makeFiles, makeIO, makeRunne
 export const OLD_REMOTE = /github\.com[:/]cacooper16\/garmin-cloud-mcp(\.git)?\/?$/i;
 export const NEW_REMOTE = "https://github.com/colincooperio/garmin-mcp.git";
 
+/** The current commit, or undefined if git can't say. */
+async function head(run) {
+	const r = await run("git", ["rev-parse", "HEAD"]);
+	return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : undefined;
+}
+
 /** ctx: { run, io, files }. Returns { from, to } versions. Throws StepError when a step fails. */
 export async function runUpdate(ctx) {
 	const { io, files, run } = ctx;
@@ -45,6 +51,7 @@ export async function runUpdate(ctx) {
 
 	// 3. Pull and install
 	const from = readPackageVersion(files);
+	const before = await head(run);
 	step(3, "Downloading the latest version");
 	const pull = await run("git", ["pull", "--ff-only"], { inherit: true });
 	if (pull.code !== 0) {
@@ -53,6 +60,8 @@ export async function runUpdate(ctx) {
 	const ci = await run("npm", ["ci"], { inherit: true });
 	if (ci.code !== 0) throw new StepError("npm ci", "npm ci failed (its output is above).", "run npm ci again (it often succeeds the second time after a network hiccup), then npm run update again.", 3);
 	const to = readPackageVersion(files);
+	const after = await head(run);
+	const unchanged = before !== undefined && before === after;
 
 	// 4. Settings
 	step(4, `Comparing your ${CONFIG} with ${EXAMPLE}`);
@@ -86,7 +95,8 @@ export async function runUpdate(ctx) {
 		);
 	}
 
-	io.print(`\nUpdated: ${from ?? "unknown"} -> ${to ?? "unknown"}.${from === to ? " (Already the latest version; redeployed.)" : ""}`);
+	if (unchanged) io.print(`\nAlready up to date: redeployed ${to ?? "unknown"}.`);
+	else io.print(`\nUpdated: ${from ?? "unknown"} -> ${to ?? "unknown"}.`);
 	io.print("If anything misbehaves, npx wrangler rollback returns to the previous deployment.");
 	return { from, to };
 }
