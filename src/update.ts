@@ -83,7 +83,7 @@ export interface UpdateOptions {
 	fetch?: (input: string, init?: RequestInit) => Promise<Response>;
 	/** Seconds since epoch. */
 	now?: () => number;
-	/** GARMIN_MCP_NO_UPDATE_CHECK=1: no request, no notice. */
+	/** Turned off (see updateCheckDisabled): no request, no notice. */
 	disabled?: boolean;
 	/** Cloud: once per day (tracked in KV). Local: once per server session. */
 	perDay?: boolean;
@@ -99,6 +99,19 @@ export type UpdateNotice = {
 
 /** Truthy opt-out values for GARMIN_MCP_NO_UPDATE_CHECK. */
 export const optedOut = (v: string | undefined) => ["1", "true", "yes"].includes(v?.trim().toLowerCase() ?? "");
+
+/**
+ * Whether the update check is off. Two switches, either one turns it off:
+ * - GARMIN_MCP_NO_UPDATE_CHECK = "1" / "true" (/ "yes"): the documented
+ *   opt-out for npx and cloud installs.
+ * - GARMIN_MCP_UPDATE_CHECK = "false" / "0": the Desktop extension's
+ *   "Check for updates" switch, unticked.
+ * Anything else leaves it on, including an unset, empty or "true" value and
+ * an unsubstituted "${user_config.update_check}" from an older Claude Desktop.
+ */
+export function updateCheckDisabled(noUpdateCheck: string | undefined, updateCheck: string | undefined): boolean {
+	return optedOut(noUpdateCheck) || ["false", "0"].includes(updateCheck?.trim().toLowerCase() ?? "");
+}
 
 export class UpdateCheck {
 	private readonly o: UpdateOptions;

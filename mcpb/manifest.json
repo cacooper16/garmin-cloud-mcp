@@ -26,7 +26,7 @@
 			"env": {
 				"GARMIN_API_KEY": "${user_config.garmin_api_key}",
 				"GARMIN_MCP_INSTALL": "mcpb",
-				"GARMIN_MCP_NO_UPDATE_CHECK": "${user_config.disable_update_check}"
+				"GARMIN_MCP_UPDATE_CHECK": "${user_config.update_check}"
 			}
 		}
 	},
@@ -38,11 +38,11 @@
 			"sensitive": true,
 			"required": true
 		},
-		"disable_update_check": {
+		"update_check": {
 			"type": "boolean",
-			"title": "Turn off the daily update check",
-			"description": "Once a day the extension downloads a tiny version file from GitHub to tell you about new versions. Nothing about you or your data is sent.",
-			"default": false,
+			"title": "Check for updates",
+			"description": "Let Claude tell you when a new version is out.",
+			"default": true,
 			"required": false
 		}
 	},

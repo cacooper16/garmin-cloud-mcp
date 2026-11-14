@@ -21,7 +21,7 @@ import { createLocalKV } from "./file-kv.ts";
 import { GarminClient } from "./garmin.ts";
 import { detectInstall } from "./install.ts";
 import { createGarminServer, SERVER_VERSION } from "./server.ts";
-import { optedOut, UpdateCheck } from "./update.ts";
+import { updateCheckDisabled, UpdateCheck } from "./update.ts";
 
 const apiKey = process.env.GARMIN_API_KEY ?? "";
 if (!apiKey.trim()) {
@@ -35,11 +35,12 @@ if (!apiKey.trim()) {
 const { kv, dir } = createLocalKV(process.env);
 
 // Update notice: a daily, background download of a small version file from
-// GitHub (see update.ts). Off with GARMIN_MCP_NO_UPDATE_CHECK=1, and skipped
-// when running from a source checkout.
+// GitHub (see update.ts). Off with GARMIN_MCP_NO_UPDATE_CHECK=1 (or, from the
+// Desktop extension, GARMIN_MCP_UPDATE_CHECK=false), and skipped when running
+// from a source checkout.
 const install = await detectInstall(process.env, process.argv[1] ?? "", SERVER_VERSION).catch(() => undefined);
 const update =
-	install && !optedOut(process.env.GARMIN_MCP_NO_UPDATE_CHECK)
+	install && !updateCheckDisabled(process.env.GARMIN_MCP_NO_UPDATE_CHECK, process.env.GARMIN_MCP_UPDATE_CHECK)
 		? new UpdateCheck({ current: SERVER_VERSION, install, kv })
 		: undefined;
 await update?.load();

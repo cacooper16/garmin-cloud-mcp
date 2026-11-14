@@ -11,6 +11,7 @@ import {
 	type Install,
 	optedOut,
 	UpdateCheck,
+	updateCheckDisabled,
 } from "../src/update.ts";
 import { callGarminTool } from "./tool-harness.ts";
 
@@ -181,6 +182,24 @@ describe("UpdateCheck", () => {
 		assert.equal(gh.urls.length, 0);
 		assert.equal(await u.notice(), undefined);
 		assert.equal(u.instructionsLine(), undefined);
+	});
+
+	it("updateCheckDisabled: off when either switch says so, on otherwise", () => {
+		// GARMIN_MCP_NO_UPDATE_CHECK (npx, cloud) x GARMIN_MCP_UPDATE_CHECK (Desktop's "Check for updates").
+		const noCheck: (string | undefined)[] = [undefined, "", "0", "false", "1", "true", " TRUE "];
+		const check: (string | undefined)[] = [undefined, "", "true", "1", "${user_config.update_check}", "false", "0", " FALSE "];
+		for (const no of noCheck) {
+			for (const yes of check) {
+				const expected = ["1", "true", " TRUE "].includes(no ?? "") || ["false", "0", " FALSE "].includes(yes ?? "");
+				assert.equal(
+					updateCheckDisabled(no, yes),
+					expected,
+					`NO_UPDATE_CHECK=${JSON.stringify(no)}, UPDATE_CHECK=${JSON.stringify(yes)}`,
+				);
+			}
+		}
+		assert.equal(updateCheckDisabled(undefined, undefined), false, "on by default");
+		assert.equal(updateCheckDisabled(undefined, "${user_config.update_check}"), false, "an unsubstituted placeholder leaves it on");
 	});
 
 	it("unpinned npx: checked (so it's counted) but never told", async () => {

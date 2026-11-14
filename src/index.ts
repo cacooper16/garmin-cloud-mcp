@@ -6,7 +6,7 @@ import { isAllowedUser } from "./allowlist.ts";
 import { mcpResource } from "./resource.ts";
 import { GitHubHandler, type Props } from "./github-handler.ts";
 import { createGarminServer, SERVER_VERSION } from "./server.ts";
-import { optedOut, UpdateCheck } from "./update.ts";
+import { updateCheckDisabled, UpdateCheck } from "./update.ts";
 
 /**
  * get_personal_bests downloads one FIT file per uncached activity. Cloudflare's
@@ -20,12 +20,13 @@ const WORKER_MAX_DOWNLOADS_PER_CALL = 15;
  * waitUntil, cached in KV, shown on the first tool result of each day. Off
  * with GARMIN_MCP_NO_UPDATE_CHECK = "1" in wrangler.jsonc's vars.
  */
+const updateVars = env as Env & { GARMIN_MCP_NO_UPDATE_CHECK?: string; GARMIN_MCP_UPDATE_CHECK?: string };
 const update = new UpdateCheck({
 	current: SERVER_VERSION,
 	install: { type: "cloud" },
 	kv: env.OAUTH_KV,
 	perDay: true,
-	disabled: optedOut((env as Env & { GARMIN_MCP_NO_UPDATE_CHECK?: string }).GARMIN_MCP_NO_UPDATE_CHECK),
+	disabled: updateCheckDisabled(updateVars.GARMIN_MCP_NO_UPDATE_CHECK, updateVars.GARMIN_MCP_UPDATE_CHECK),
 });
 
 // One server (and Garmin client) per request; the bearer token cache lives at module/KV level.

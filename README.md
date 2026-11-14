@@ -156,7 +156,8 @@ All you need is a Garmin Personal API key (see
 2. Double-click it, paste your Garmin key when asked, done.
 
 Claude Desktop runs the extension itself, so you don't need Node or a config
-file, and your key is stored in your system keychain.
+file, and your key is stored in your system keychain. To turn off the daily
+update check, untick "Check for updates" in the extension's settings.
 
 Claude Desktop warns before installing it. It shows that warning for every
 extension that isn't installed from Anthropic's directory, not because of
@@ -623,11 +624,11 @@ compact answer is missing it: please [open an issue](CONTRIBUTING.md#reporting-i
   or your Garmin data is sent: no key, no account, no identifier, just a plain
   download with a generic User-Agent, so GitHub sees the IP address it comes
   from (your computer's, or Cloudflare's for the cloud version). If a newer
-  version exists, your AI app mentions it once. To turn it off, set
-  `GARMIN_MCP_NO_UPDATE_CHECK=1`: locally in the same `env` block as
+  version exists, your AI app mentions it once. To turn it off in the Claude
+  Desktop extension, untick "Check for updates" in its settings. Everywhere
+  else, set `GARMIN_MCP_NO_UPDATE_CHECK=1`: locally in the same `env` block as
   `GARMIN_API_KEY`; in the cloud as a var in `wrangler.jsonc` (it's there,
-  commented out), then redeploy; in the Claude Desktop extension, tick "Turn
-  off the daily update check" in its settings.
+  commented out), then redeploy.
 
 ### Local
 
