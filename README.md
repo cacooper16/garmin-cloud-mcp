@@ -49,6 +49,8 @@ Ask things like:
 - _"Am I building my mileage too fast?"_
 - _"Do I run worse after a bad night's sleep?"_
 
+Ask in any language: Claude answers in yours.
+
 Here it is in Claude on a phone (cloud version), projecting a 10k time from
 recent runs:
 
