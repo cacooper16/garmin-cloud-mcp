@@ -7,7 +7,7 @@ import { registerGarminPrompts } from "./prompts.ts";
 import { registerGarminTools, type ToolOptions } from "./tools.ts";
 
 /** Reported to clients as serverInfo.version. Must match package.json (test/version.test.ts). */
-export const SERVER_VERSION = "1.4.0";
+export const SERVER_VERSION = "1.4.1";
 
 const INSTRUCTIONS =
 	"Read-only access to the user's own Garmin Connect data. Dates are the user's local calendar dates (YYYY-MM-DD). " +

@@ -1,6 +1,6 @@
 {
 	"name": "garmin-mcp",
-	"version": "1.4.0",
+	"version": "1.4.1",
 	"mcpName": "io.github.colincooperio/garmin-mcp",
 	"description": "Ask Claude, ChatGPT or any AI assistant about your Garmin training, sleep and recovery. Uses Garmin's official Personal API: no password, read-only. Run locally with npx or self-host on Cloudflare.",
 	"license": "MIT",
